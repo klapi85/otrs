@@ -36,43 +36,11 @@ All queue functions. E. g. to add queue or other functions.
 
 =item new()
 
-create an object
+create an object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-    use Kernel::System::Queue;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $QueueObject = Kernel::System::Queue->new(
-        ConfigObject        => $ConfigObject,
-        LogObject           => $LogObject,
-        DBObject            => $DBObject,
-        MainObject          => $MainObject,
-        EncodeObject        => $EncodeObject,
-        GroupObject         => $GroupObject, # if given
-        CustomerGroupObject => $CustomerGroupObject, # if given
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $QueueObject = $Kernel::OM->Get('QueueObject');
 
 =cut
 
@@ -212,83 +180,6 @@ sub GetSignature {
     }
 
     return $String;
-}
-
-# for comapt!
-# DEPRECATED
-sub SetQueueStandardResponse {
-    my ( $Self, %Param ) = @_;
-
-    if ( !$Param{ResponseID} || !$Param{QueueID} || !$Param{UserID} ) {
-        $Self->{LogObject}->Log(
-            Priority => 'error',
-            Message  => 'Need ResponseID, QueueID and UserID!',
-        );
-        return;
-    }
-
-    # sql
-    my $Success = $Self->{DBObject}->Do(
-        SQL => 'INSERT INTO queue_standard_template '
-            . '(queue_id, standard_template_id, create_time, create_by, change_time, change_by)'
-            . ' VALUES ( ?, ?, current_timestamp, ?, current_timestamp, ?)',
-        Bind => [ \$Param{QueueID}, \$Param{ResponseID}, \$Param{UserID}, \$Param{UserID} ],
-    );
-
-    $Self->{CacheInternalObject}->CleanUp();
-    return $Success;
-}
-
-=item GetStandardResponses()
-
-DEPRECATED: This function will be removed in further versions of otrs.
-
-get std responses of a queue
-
-    my %Responses = $QueueObject->GetStandardResponses( QueueID => 123 );
-
-Returns:
-    %Responses = (
-        1 => 'Some Name',
-        2 => 'Some Name',
-    );
-
-    my %Responses = $QueueObject->GetStandardResponses(
-        QueueID       => 123,
-        TemplateTypes => 1,
-    );
-
-Returns:
-    %Responses = (
-        Answer => {
-            1 => 'Some Name',
-            2 => 'Some Name',
-        },
-        # ...
-    );
-
-    my %Queues = $QueueObject->GetStandardResponses( StandardResponseID => 123 );
-
-Returns:
-    %Queues = (
-        1 => 'Some Name',
-        2 => 'Some Name',
-    );
-
-=cut
-
-sub GetStandardResponses {
-    my ( $Self, %Param ) = @_;
-
-    # compat
-    if (
-        ( !defined $Param{StandardTemplateID} || !$Param{StandardTemplateID} )
-        && $Param{StandardResponseID}
-        )
-    {
-        $Param{StandardTemplateID} = $Param{StandardResponseID};
-    }
-    return $Self->QueueStandardTemplateMemberList(%Param);
 }
 
 =item QueueStandardTemplateMemberAdd()

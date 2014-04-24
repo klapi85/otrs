@@ -30,12 +30,7 @@ use lib dirname($RealBin) . "/Kernel/cpan-lib";
 
 use Getopt::Std;
 
-use Kernel::Config;
-use Kernel::System::Encode;
-use Kernel::System::Time;
-use Kernel::System::Log;
-use Kernel::System::Main;
-use Kernel::System::DB;
+use Kernel::System::ObjectManager;
 
 # get options
 my %Opts;
@@ -73,16 +68,15 @@ if ( -e "$Opts{b}/Config.tar.gz" ) {
 }
 
 # create common objects
-my %CommonObject;
-$CommonObject{ConfigObject} = Kernel::Config->new();
-$CommonObject{EncodeObject} = Kernel::System::Encode->new(%CommonObject);
-$CommonObject{LogObject}    = Kernel::System::Log->new(
-    LogPrefix => 'OTRS-Restore',
-    %CommonObject,
+local $Kernel::OM = Kernel::System::ObjectManager->new(
+    LogObject => {
+        LogPrefix => 'OTRS-restore.pl',
+    },
 );
-$CommonObject{TimeObject} = Kernel::System::Time->new(%CommonObject);
-$CommonObject{MainObject} = Kernel::System::Main->new(%CommonObject);
-$CommonObject{DBObject}   = Kernel::System::DB->new(%CommonObject);
+my %CommonObject = $Kernel::OM->ObjectHash(
+    Objects => [qw(ConfigObject EncodeObject LogObject MainObject DBObject)],
+);
+
 my $DatabaseHost = $CommonObject{ConfigObject}->Get('DatabaseHost');
 my $Database     = $CommonObject{ConfigObject}->Get('Database');
 my $DatabaseUser = $CommonObject{ConfigObject}->Get('DatabaseUser');
@@ -202,9 +196,14 @@ else {
     if ( -e "$Opts{b}/DatabaseBackup.sql.gz" ) {
         print "decompresses SQL-file ...\n";
         system("gunzip $Opts{b}/DatabaseBackup.sql.gz");
+
+        # set password via environment variable if there is one
+        if ($DatabasePw) {
+            $ENV{'PGPASSWORD'} = $DatabasePw;
+        }
         print "cat SQL-file into $DB database\n";
         system(
-            "cat $Opts{b}/DatabaseBackup.sql | psql -U$DatabaseUser -W'$DatabasePw' -h$DatabaseHost $Database"
+            "cat $Opts{b}/DatabaseBackup.sql | psql -U$DatabaseUser -h$DatabaseHost $Database"
         );
         print "compress SQL-file...\n";
         system("gzip $Opts{b}/DatabaseBackup.sql");
@@ -212,9 +211,14 @@ else {
     elsif ( -e "$Opts{b}/DatabaseBackup.sql.bz2" ) {
         print "decompresses SQL-file ...\n";
         system("bunzip2 $Opts{b}/DatabaseBackup.sql.bz2");
+
+        # set password via environment variable if there is one
+        if ($DatabasePw) {
+            $ENV{'PGPASSWORD'} = $DatabasePw;
+        }
         print "cat SQL-file into $DB database\n";
         system(
-            "cat $Opts{b}/DatabaseBackup.sql | psql -U$DatabaseUser -W'$DatabasePw' -h$DatabaseHost $Database"
+            "cat $Opts{b}/DatabaseBackup.sql | psql -U$DatabaseUser -h$DatabaseHost $Database"
         );
         print "compress SQL-file...\n";
         system("bzip2 $Opts{b}/DatabaseBackup.sql");

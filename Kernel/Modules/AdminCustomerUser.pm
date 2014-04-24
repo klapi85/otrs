@@ -531,8 +531,8 @@ sub Run {
                     my $UserQuote     = $Self->{LayoutObject}->Ascii2Html( Text => $User );
                     if ( $Self->{ConfigObject}->Get('Frontend::Module')->{AgentTicketPhone} ) {
                         $URL
-                            .= "<a href=\"\$Env{\"CGIHandle\"}?Action=AgentTicketPhone;Subaction=StoreNew;ExpandCustomerName=2;CustomerUser=$UserHTMLQuote;\$QEnv{\"ChallengeTokenParam\"}\">"
-                            . $Self->{LayoutObject}->{LanguageObject}->Get('New phone ticket')
+                            .= "<a href=\"$Self->{LayoutObject}->{Baselink}Action=AgentTicketPhone;Subaction=StoreNew;ExpandCustomerName=2;CustomerUser=$UserHTMLQuote;$Self->{LayoutObject}->{ChallengeTokenParam}\">"
+                            . $Self->{LayoutObject}->{LanguageObject}->Translate('New phone ticket')
                             . "</a>";
                     }
                     if ( $Self->{ConfigObject}->Get('Frontend::Module')->{AgentTicketEmail} ) {
@@ -540,15 +540,16 @@ sub Run {
                             $URL .= " - ";
                         }
                         $URL
-                            .= "<a href=\"\$Env{\"CGIHandle\"}?Action=AgentTicketEmail;Subaction=StoreNew;ExpandCustomerName=2;CustomerUser=$UserHTMLQuote;\$QEnv{\"ChallengeTokenParam\"}\">"
-                            . $Self->{LayoutObject}->{LanguageObject}->Get('New email ticket')
+                            .= "<a href=\"$Self->{LayoutObject}->{Baselink}Action=AgentTicketEmail;Subaction=StoreNew;ExpandCustomerName=2;CustomerUser=$UserHTMLQuote;$Self->{LayoutObject}->{ChallengeTokenParam}\">"
+                            . $Self->{LayoutObject}->{LanguageObject}->Translate('New email ticket')
                             . "</a>";
                     }
                     if ($URL) {
                         $Output
                             .= $Self->{LayoutObject}->Notify(
-                            Data => $Self->{LayoutObject}->{LanguageObject}->Get(
-                                'Customer %s added", "' . $UserQuote
+                            Data => $Self->{LayoutObject}->{LanguageObject}->Translate(
+                                'Customer %s added',
+                                $UserQuote,
                                 )
                                 . " ( $URL )!",
                             );
@@ -556,8 +557,9 @@ sub Run {
                     else {
                         $Output
                             .= $Self->{LayoutObject}->Notify(
-                            Data => $Self->{LayoutObject}->{LanguageObject}->Get(
-                                'Customer %s added", "' . $UserQuote
+                            Data => $Self->{LayoutObject}->{LanguageObject}->Translate(
+                                'Customer %s added',
+                                $UserQuote,
                                 )
                                 . "!",
                             );
@@ -872,7 +874,7 @@ sub _Edit {
             $Param{Option} = $Self->{LayoutObject}->BuildSelection(
                 Data        => $SelectionsData,
                 Name        => $Entry->[0],
-                Translation => 0,
+                Translation => 1,
                 SelectedID  => $Param{ $Entry->[0] },
                 Class => $Param{RequiredClass} . ' ' . $Param{Errors}->{ $Entry->[0] . 'Invalid' },
             );

@@ -42,7 +42,7 @@ sub Run {
     my $OldName        = $Self->{ParamObject}->GetParam( Param => 'OldName' );
     my $StopAfterMatch = $Self->{ParamObject}->GetParam( Param => 'StopAfterMatch' ) || 0;
     my %GetParam = ();
-    for my $Number ( 1 .. 12 ) {
+    for my $Number ( 1 .. $Self->{ConfigObject}->Get('PostmasterHeaderFieldCount') ) {
         $GetParam{"MatchHeader$Number"}
             = $Self->{ParamObject}->GetParam( Param => "MatchHeader$Number" );
         $GetParam{"MatchValue$Number"}
@@ -101,12 +101,11 @@ sub Run {
         my %Set   = ();
         my %Not;
 
-        for my $Number ( 1 .. 12 ) {
+        for my $Number ( 1 .. $Self->{ConfigObject}->Get('PostmasterHeaderFieldCount') ) {
             if ( $GetParam{"MatchHeader$Number"} && $GetParam{"MatchValue$Number"} ) {
                 $Match{ $GetParam{"MatchHeader$Number"} } = $GetParam{"MatchValue$Number"};
+                $Not{ $GetParam{"MatchHeader$Number"} }   = $GetParam{"MatchNot$Number"};
             }
-
-            $Not{ $GetParam{"MatchHeader$Number"} } = $GetParam{"MatchNot$Number"};
 
             if ( $GetParam{"SetHeader$Number"} && $GetParam{"SetValue$Number"} ) {
                 $Set{ $GetParam{"SetHeader$Number"} } = $GetParam{"SetValue$Number"};
@@ -277,7 +276,7 @@ sub _MaskUpdate {
     $SetHeader{''} = '-';
 
     # build strings
-    for my $Number ( 1 .. 12 ) {
+    for my $Number ( 1 .. $Self->{ConfigObject}->Get('PostmasterHeaderFieldCount') ) {
         $Data{"MatchHeader$Number"} = $Self->{LayoutObject}->BuildSelection(
             Data        => \%Header,
             Name        => "MatchHeader$Number",

@@ -33,13 +33,13 @@ use CGI::Fast;
 
 # load generic interface
 use Kernel::GenericInterface::Provider;
+use Kernel::System::ObjectManager;
 
 # response loop
 while ( my $WebRequest = new CGI::Fast ) {
 
-    # create new object
-    my $Provider = Kernel::GenericInterface::Provider->new();
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
 
-    # execute object
+    my $Provider = Kernel::GenericInterface::Provider->new();
     $Provider->Run();
 }

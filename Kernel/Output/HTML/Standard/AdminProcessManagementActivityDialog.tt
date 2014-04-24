@@ -43,13 +43,17 @@
 [% RenderBlockEnd("EditWarning") %]
 
                 <div class="WidgetSimple Expanded WidgetNotice">
-                    <div class="Content">[% Translate("Please note that customer users will not be able to see or use the following fields: Owner, Responsible, Lock, PendingTime and CustomerID.") | html %]</div>
+
+                    <div class="Content">
+                        [% Translate("Please note that customer users will not be able to see or use the following fields: Owner, Responsible, Lock, PendingTime and CustomerID.") | html %]
+                        [% Translate("The Queue field can only be used by customers when creating a new ticket.") | html %]
+                    </div>
                 </div>
 
                 <div class="WidgetSimple Expanded">
                     <div class="Header">
                         <div class="WidgetAction Toggle">
-                            <a href="#" title="[% Translate("Show or hide the content") | html %]"><i class="icon-caret-right"></i><i class="icon-caret-down"></i></a>
+                            <a href="#" title="[% Translate("Show or hide the content") | html %]"><i class="fa fa-caret-right"></i><i class="fa fa-caret-down"></i></a>
                         </div>
                         <h2>[% Translate("Activity Dialog") | html %]</h2>
                     </div>
@@ -127,7 +131,7 @@
                 <div class="WidgetSimple Expanded">
                     <div class="Header">
                         <div class="WidgetAction Toggle">
-                            <a href="#" title="[% Translate("Show or hide the content") | html %]"><i class="icon-caret-right"></i><i class="icon-caret-down"></i></a>
+                            <a href="#" title="[% Translate("Show or hide the content") | html %]"><i class="fa fa-caret-right"></i><i class="fa fa-caret-down"></i></a>
                         </div>
                         <h2>[% Translate("Fields") | html %]</h2>
                     </div>
@@ -181,7 +185,7 @@
         </div>
     </div>
     <div class="Footer">
-        <button class="Primary" id="Submit" title="[% Translate("Submit") | html %]" type="submit" value="[% Translate("Submit") | html %]">[% Translate("Submit") | html %]</button>
+        <button class="Primary CallForAction" id="Submit" title="[% Translate("Submit") | html %]" type="submit" value="[% Translate("Submit") | html %]"><span>[% Translate("Submit") | html %]</span></button>
     </div>
 </div>
 

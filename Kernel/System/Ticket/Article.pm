@@ -1282,6 +1282,16 @@ example of how to access the hash ref
 Note: If an attachment with html body content is available, the attachment id
 is returned as 'AttachmentIDOfHTMLBody' in hash ref.
 
+You can limit the list of returned elements with the C<Page> and C<Limit>
+parameters:
+
+    my @ArticleBox = $TicketObject->ArticleContentIndex(
+        TicketID    => 123,
+        UserID      => 1,
+        Limit       => 5,
+        Page        => 3,   # get 11th to 16th element
+    );
+
 =cut
 
 sub ArticleContentIndex {
@@ -1300,6 +1310,8 @@ sub ArticleContentIndex {
         ArticleType   => $Param{ArticleType},
         UserID        => $Param{UserID},
         DynamicFields => $Param{DynamicFields},
+        Page          => $Param{Page},
+        Limit         => $Param{Limit},
     );
 
     # article attachments of each article
@@ -1398,6 +1410,18 @@ to get only a dedicated count you can use Limit and Order attributes
         Limit    => 5,
     );
 
+You can also provide an offset by passing the C<Page> argument. To get the
+6th to 10th article, you can say
+
+    my @ArticleIndex = $TicketObject->ArticleGet(
+        TicketID => 123,
+        UserID   => 123,
+        Limit    => 5,
+        Page     => 2,
+    );
+
+Page numbers start with 1.
+
 =cut
 
 sub ArticleGet {
@@ -1494,7 +1518,15 @@ sub ArticleGet {
         $SQL .= ' ORDER BY sa.create_time, sa.id ASC';
     }
 
-    return if !$Self->{DBObject}->Prepare( SQL => $SQL, Bind => \@Bind, Limit => $Param{Limit} );
+    my $Start;
+
+    if ( $Param{Page} ) {
+        $Start = $Param{Limit} * ( $Param{Page} - 1 );
+    }
+
+    return
+        if !$Self->{DBObject}
+        ->Prepare( SQL => $SQL, Bind => \@Bind, Limit => $Param{Limit}, Start => $Start );
     my %Ticket;
     while ( my @Row = $Self->{DBObject}->FetchrowArray() ) {
         my %Data;
@@ -1826,6 +1858,36 @@ sub ArticleGet {
     return @Content;
 }
 
+=item ArticleCount()
+
+Returns the number of articles for a ticket
+
+    my $ArticleCount = $TicketID->ArticleCount(
+        TicketID    => 123,
+    );
+
+=cut
+
+sub ArticleCount {
+    my ( $Self, %Param ) = @_;
+
+    # check needed stuff
+    if ( !$Param{TicketID} ) {
+        $Self->{LogObject}->Log( Priority => 'error', Message => 'Need TicketID!' );
+        return;
+    }
+
+    my $SQL = 'SELECT COUNT(id) FROM article WHERE ticket_id = ?';
+    return if !$Self->{DBObject}->Prepare( SQL => $SQL, Bind => [ \$Param{TicketID} ] );
+
+    my $Count;
+    while ( my @Row = $Self->{DBObject}->FetchrowArray() ) {
+        $Count = $Row[0];
+    }
+
+    return $Count;
+}
+
 =begin Internal:
 
 =cut
@@ -1878,7 +1940,7 @@ sub _ArticleGetId {
 
 update an article
 
-Note: Keys "Body", "Subject", "From", "To", "Cc", "ArticleType" and "SenderType" are implemented.
+Note: Keys "Body", "Subject", "From", "To", "Cc", "ReplyTo", "ArticleType" and "SenderType" are implemented.
 
     my $Success = $TicketObject->ArticleUpdate(
         ArticleID => 123,
@@ -1939,6 +2001,7 @@ sub ArticleUpdate {
         Body          => 'a_body',
         Subject       => 'a_subject',
         From          => 'a_from',
+        ReplyTo       => 'a_reply_to',
         To            => 'a_to',
         Cc            => 'a_cc',
         ArticleTypeID => 'article_type_id',
@@ -3292,8 +3355,9 @@ write an article attachment to storage
         Content            => $ContentAsString,
         ContentType        => 'text/html; charset="iso-8859-15"',
         Filename           => 'lala.html',
-        ContentID          => 'cid-1234', # optional
-        ContentAlternative => 0,          # optional, alternative content to shown as body
+        ContentID          => 'cid-1234',   # optional
+        ContentAlternative => 0,            # optional, alternative content to shown as body
+        Disposition        => 'attachment', # or 'inline'
         ArticleID          => 123,
         UserID             => 123,
     );
@@ -3320,6 +3384,7 @@ returns:
         Filename           => "StdAttachment-Test1.pdf",
         Filesize           => "4.6 KBytes",
         FilesizeRaw        => 4722,
+        Disposition        => 'attachment',
     );
 
 =item ArticleAttachmentIndex()
@@ -3367,20 +3432,22 @@ returns:
 
     my %Index = {
         '1' => {
-            'ContentAlternative' => '',
-            'ContentID' => '',
-            'Filesize' => '4.6 KBytes',
-            'ContentType' => 'application/pdf',
-            'Filename' => 'StdAttachment-Test1.pdf',
-            'FilesizeRaw' => 4722
+            ContentAlternative => '',
+            ContentID          => '',
+            Filesize           => '4.6 KBytes',
+            ContentType        => 'application/pdf',
+            Filename           => 'StdAttachment-Test1.pdf',
+            FilesizeRaw        => 4722,
+            Disposition        => attachment,
         },
         '2' => {
-            'ContentAlternative' => '',
-            'ContentID' => '',
-            'Filesize' => '183 Bytes',
-            'ContentType' => 'text/html; charset="utf-8"',
-            'Filename' => 'file-2',
-            'FilesizeRaw' => 183
+            ContentAlternative => '',
+            ContentID          => '',
+            Filesize           => '183 Bytes',
+            ContentType        => 'text/html; charset="utf-8"',
+            Filename           => 'file-2',
+            FilesizeRaw        => 183,
+            Disposition        => attachment,
         },
     };
 
@@ -3455,7 +3522,12 @@ sub ArticleAttachmentIndex {
                     # content id cleanup
                     $File{ContentID} =~ s/^<//;
                     $File{ContentID} =~ s/>$//;
-                    if ( $File{ContentID} && $Attachment{Content} =~ /\Q$File{ContentID}\E/i ) {
+                    if (
+                        $File{ContentID}
+                        && $Attachment{Content} =~ /\Q$File{ContentID}\E/i
+                        && $File{Disposition} eq 'inline'
+                        )
+                    {
                         delete $Attachments{$AttachmentID};
                     }
                 }

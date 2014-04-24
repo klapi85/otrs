@@ -38,7 +38,7 @@ sub AgentCustomerViewTable {
         $Self->FatalError( Message => 'Need Hash ref in Data param' );
     }
     elsif ( ref $Param{Data} eq 'HASH' && !%{ $Param{Data} } ) {
-        return $Self->{LanguageObject}->Get('none');
+        return $Self->{LanguageObject}->Translate('none');
     }
 
     # add ticket params if given
@@ -202,13 +202,6 @@ sub AgentCustomerViewTable {
     # create & return output
     return $Self->Output( TemplateFile => 'AgentCustomerTableView', Data => \%Param );
 }
-
-# AgentQueueListOption()
-#
-# !! DONT USE THIS FUNCTION !! Use BuildSelection() instead.
-#
-# Due to compatibility reason this function is still in use and will be removed
-# in a future release.
 
 sub AgentQueueListOption {
     my ( $Self, %Param ) = @_;
@@ -404,7 +397,7 @@ sub AgentQueueListOption {
 
     if ( $Param{TreeView} ) {
         my $TreeSelectionMessage
-            = $Self->{LanguageObject}->Get("Show Tree Selection");
+            = $Self->{LanguageObject}->Translate("Show Tree Selection");
         $Param{MoveQueuesStrg}
             .= ' <a href="#" title="'
             . $TreeSelectionMessage
@@ -650,6 +643,7 @@ sub ArticleQuote {
                 $Param{UploadCacheObject}->FormIDAddFile(
                     FormID => $Param{FormID},
                     %Attachment,
+                    Disposition => 'attachment',
                 );
             }
         }
@@ -695,6 +689,7 @@ sub ArticleQuote {
             $Param{UploadCacheObject}->FormIDAddFile(
                 FormID => $Param{FormID},
                 %Attachment,
+                Disposition => 'attachment',
             );
         }
     }

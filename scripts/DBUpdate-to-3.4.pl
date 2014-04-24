@@ -30,15 +30,17 @@ use lib dirname($RealBin) . '/Kernel/cpan-lib';
 
 use Getopt::Std qw();
 use Kernel::Config;
-use Kernel::System::Log;
-use Kernel::System::Time;
-use Kernel::System::Encode;
-use Kernel::System::DB;
-use Kernel::System::Main;
+use Kernel::System::ObjectManager;
 use Kernel::System::SysConfig;
 use Kernel::System::Cache;
 use Kernel::System::Package;
 use Kernel::System::VariableCheck qw(:all);
+
+local $Kernel::OM = Kernel::System::ObjectManager->new(
+    LogObject => {
+        LogPrefix => 'OTRS-DBUpdate-to-3.4.pl',
+    },
+);
 
 {
 
@@ -78,7 +80,7 @@ Please run it as the 'otrs' user or with the help of su:
     my $CommonObject = _CommonObjectsBase();
 
     # define the number of steps
-    my $Steps = 4;
+    my $Steps = 5;
     my $Step  = 1;
 
     print "Step $Step of $Steps: Refresh configuration cache... ";
@@ -93,6 +95,17 @@ Please run it as the 'otrs' user or with the help of su:
     print "Step $Step of $Steps: Check framework version... ";
     _CheckFrameworkVersion($CommonObject) || die;
     print "done.\n\n";
+    $Step++;
+
+    # migrate FontAwesome
+    print "Step $Step of $Steps: Migrate FontAwesome icons... ";
+    if ( _MigrateFontAwesome($CommonObject) ) {
+        print "done.\n\n";
+    }
+    else {
+        print "error.\n\n";
+        die;
+    }
     $Step++;
 
     # Clean up the cache completely at the end.
@@ -112,16 +125,12 @@ Please run it as the 'otrs' user or with the help of su:
 }
 
 sub _CommonObjectsBase {
-    my %CommonObject;
-    $CommonObject{ConfigObject} = Kernel::Config->new();
-    $CommonObject{LogObject}    = Kernel::System::Log->new(
-        LogPrefix => 'OTRS-DBUpdate-to-3.4',
-        %CommonObject,
+    my %CommonObject = $Kernel::OM->ObjectHash(
+        Objects =>
+            [
+            qw(ConfigObject EncodeObject LogObject MainObject TimeObject DBObject SysConfigObject)
+            ],
     );
-    $CommonObject{EncodeObject} = Kernel::System::Encode->new(%CommonObject);
-    $CommonObject{MainObject}   = Kernel::System::Main->new(%CommonObject);
-    $CommonObject{TimeObject}   = Kernel::System::Time->new(%CommonObject);
-    $CommonObject{DBObject}     = Kernel::System::DB->new(%CommonObject);
     return \%CommonObject;
 }
 
@@ -200,9 +209,86 @@ sub _CheckFrameworkVersion {
     if ( $ProductName ne 'OTRS' ) {
         die "Error: No OTRS system found"
     }
-    if ( $Version !~ /^3\.3(.*)$/ ) {
+    if ( $Version !~ /^3\.4(.*)$/ ) {
 
         die "Error: You are trying to run this script on the wrong framework version $Version!"
+    }
+
+    return 1;
+}
+
+=item _MigrateFontAwesome()
+
+Migrate settings that has changed it name.
+
+    _MigrateFontAwesome($CommonObject);
+
+=cut
+
+sub _MigrateFontAwesome {
+    my $CommonObject = shift;
+
+    my $SysConfigObject = Kernel::System::SysConfig->new( %{$CommonObject} );
+
+    # update toolbar items settings
+    # otherwise the new fontawesome icons won't be displayed
+
+    # collect icon data for toolbar items
+    my %ModuleAttributes = (
+        '1-Ticket::AgentTicketQueue' => {
+            'Icon' => 'fa fa-folder',
+        },
+        '2-Ticket::AgentTicketStatus' => {
+            'Icon' => 'fa fa-list-ol',
+        },
+        '3-Ticket::AgentTicketEscalation' => {
+            'Icon' => 'fa fa-exclamation',
+        },
+        '4-Ticket::AgentTicketPhone' => {
+            'Icon' => 'fa fa-phone',
+        },
+        '5-Ticket::AgentTicketEmail' => {
+            'Icon' => 'fa fa-envelope',
+        },
+        '6-Ticket::AgentTicketProcess' => {
+            'Icon' => 'fa fa-th-large',
+        },
+        '6-Ticket::TicketResponsible' => {
+            'Icon'        => 'fa fa-user',
+            'IconNew'     => 'fa fa-user',
+            'IconReached' => 'fa fa-user',
+        },
+        '7-Ticket::TicketWatcher' => {
+            'Icon'        => 'fa fa-eye',
+            'IconNew'     => 'fa fa-eye',
+            'IconReached' => 'fa fa-eye',
+        },
+        '8-Ticket::TicketLocked' => {
+            'Icon'        => 'fa fa-lock',
+            'IconNew'     => 'fa fa-lock',
+            'IconReached' => 'fa fa-lock',
+        },
+    );
+
+    my $Setting = $CommonObject->{ConfigObject}->Get('Frontend::ToolBarModule');
+
+    TOOLBARMODULE:
+    for my $ToolbarModule ( sort keys %ModuleAttributes ) {
+
+        next TOOLBARMODULE if !IsHashRefWithData( $Setting->{$ToolbarModule} );
+
+        # set icon and class infos
+        for my $Attribute ( sort keys %{ $ModuleAttributes{$ToolbarModule} } ) {
+            $Setting->{$ToolbarModule}->{$Attribute}
+                = $ModuleAttributes{$ToolbarModule}->{$Attribute};
+        }
+
+        # set new setting,
+        my $Success = $SysConfigObject->ConfigItemUpdate(
+            Valid => 1,
+            Key   => 'Frontend::ToolBarModule###' . $ToolbarModule,
+            Value => $Setting->{$ToolbarModule},
+        );
     }
 
     return 1;

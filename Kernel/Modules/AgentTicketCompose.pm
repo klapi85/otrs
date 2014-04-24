@@ -475,7 +475,8 @@ sub Run {
                 Param => 'FileUpload',
             );
             $Self->{UploadCacheObject}->FormIDAddFile(
-                FormID => $Self->{FormID},
+                FormID      => $Self->{FormID},
+                Disposition => 'attachment',
                 %UploadStuff,
             );
         }
@@ -758,7 +759,12 @@ sub Run {
             ATTACHMENT:
             for my $Attachment (@AttachmentData) {
                 my $ContentID = $Attachment->{ContentID};
-                if ($ContentID) {
+                if (
+                    $ContentID
+                    && ( $Attachment->{ContentType} =~ /image/i )
+                    && ( $Attachment->{Disposition} eq 'inline' )
+                    )
+                {
                     my $ContentIDHTMLQuote = $Self->{LayoutObject}->Ascii2Html(
                         Text => $ContentID,
                     );
@@ -1044,7 +1050,8 @@ sub Run {
             for ( sort keys %AllStdAttachments ) {
                 my %Data = $Self->{StdAttachmentObject}->StdAttachmentGet( ID => $_ );
                 $Self->{UploadCacheObject}->FormIDAddFile(
-                    FormID => $Self->{FormID},
+                    FormID      => $Self->{FormID},
+                    Disposition => 'attachment',
                     %Data,
                 );
             }
@@ -1070,23 +1077,18 @@ sub Run {
             );
         }
 
+        # set OrigFrom for correct email quoting (xxxx wrote)
+        $Data{OrigFrom} = $Data{From};
+
         # check article type and replace To with From (in case)
         if ( $Data{SenderType} !~ /customer/ ) {
-            my $To   = $Data{To};
-            my $From = $Data{From};
-
-            # set OrigFrom for correct email quoting (xxxx wrote)
-            $Data{OrigFrom} = $Data{From};
 
             # replace From/To, To/From because sender is agent
-            $Data{From}    = $To;
-            $Data{To}      = $Data{From};
-            $Data{ReplyTo} = '';
-        }
-        else {
+            my $To = $Data{To};
+            $Data{To}   = $Data{From};
+            $Data{From} = $To;
 
-            # set OrigFrom for correct email quoting (xxxx wrote)
-            $Data{OrigFrom} = $Data{From};
+            $Data{ReplyTo} = '';
         }
 
         # build OrigFromName (to only use the realname)
@@ -1135,13 +1137,13 @@ sub Run {
                     $Data{Body} = "<br/>" . $Data{Body};
 
                     if ( $Data{Created} ) {
-                        $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get('Date') .
+                        $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate('Date') .
                             ": $Data{Created}<br/>" . $Data{Body};
                     }
 
                     for (qw(Subject ReplyTo Reply-To Cc To From)) {
                         if ( $Data{$_} ) {
-                            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get($_) .
+                            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate($_) .
                                 ": $Data{$_}<br/>" . $Data{Body};
                         }
                     }
@@ -1150,8 +1152,10 @@ sub Run {
                         String => $Data{From},
                     );
 
-                    my $MessageFrom = $Self->{LayoutObject}->{LanguageObject}->Get('Message from');
-                    my $EndMessage  = $Self->{LayoutObject}->{LanguageObject}->Get('End message');
+                    my $MessageFrom
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Message from');
+                    my $EndMessage
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('End message');
 
                     $Data{Body} = "<br/>---- $MessageFrom $From ---<br/><br/>" . $Data{Body};
                     $Data{Body} .= "<br/>---- $EndMessage ---<br/>";
@@ -1172,19 +1176,21 @@ sub Run {
                 else {
                     $Data{Body} = "\n" . $Data{Body};
                     if ( $Data{Created} ) {
-                        $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get('Date') .
+                        $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate('Date') .
                             ": $Data{Created}\n" . $Data{Body};
                     }
 
                     for (qw(Subject ReplyTo Reply-To Cc To From)) {
                         if ( $Data{$_} ) {
-                            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get($_) .
+                            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate($_) .
                                 ": $Data{$_}\n" . $Data{Body};
                         }
                     }
 
-                    my $MessageFrom = $Self->{LayoutObject}->{LanguageObject}->Get('Message from');
-                    my $EndMessage  = $Self->{LayoutObject}->{LanguageObject}->Get('End message');
+                    my $MessageFrom
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Message from');
+                    my $EndMessage
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('End message');
 
                     $Data{Body} = "\n---- $MessageFrom $Data{From} ---\n\n" . $Data{Body};
                     $Data{Body} .= "\n---- $EndMessage ---\n";
@@ -1249,9 +1255,9 @@ sub Run {
                 # replace To with customers database address
                 if ( $Self->{ConfigObject}->Get('Ticket::Frontend::ComposeReplaceSenderAddress') ) {
                     $Output .= $Self->{LayoutObject}->Notify(
-                        Data => $Self->{LayoutObject}->{LanguageObject}->Get(
-                            'Address %s replaced with registered customer address.", "'
-                                . $Data{ToEmail}
+                        Data => $Self->{LayoutObject}->{LanguageObject}->Translate(
+                            'Address %s replaced with registered customer address.',
+                            $Data{ToEmail},
                         ),
 
                     );
@@ -1900,7 +1906,15 @@ sub _Mask {
     # show attachments
     ATTACHMENT:
     for my $Attachment ( @{ $Param{Attachments} } ) {
-        next ATTACHMENT if $Attachment->{ContentID} && $Self->{LayoutObject}->{BrowserRichText};
+        if (
+            $Attachment->{ContentID}
+            && $Self->{LayoutObject}->{BrowserRichText}
+            && ( $Attachment->{ContentType} =~ /image/i )
+            && ( $Attachment->{Disposition} eq 'inline' )
+            )
+        {
+            next ATTACHMENT;
+        }
         $Self->{LayoutObject}->Block(
             Name => 'Attachment',
             Data => $Attachment,

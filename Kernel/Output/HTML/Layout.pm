@@ -17,6 +17,7 @@ use Kernel::System::HTMLUtils;
 use Kernel::System::JSON;
 use Kernel::System::VariableCheck qw(:all);
 
+use Storable;
 use URI::Escape qw();
 
 =head1 NAME
@@ -35,58 +36,26 @@ All generic html functions. E. g. to get options fields, template processing, ..
 
 =item new()
 
-create a new object
+create a new object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Time;
-    use Kernel::System::Main;
-    use Kernel::System::Web::Request;
-    use Kernel::Output::HTML::Layout;
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        LayoutObject {
+            Lang    => 'de',
+        },
+    );
+    my $LayoutObject = $Kernel::OM->Get('LayoutObject');
 
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $TimeObject = Kernel::System::Time->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-    );
-    my $RequestObject = Kernel::System::Web::Request->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        EncodeObject => $EncodeObject,
-        MainObject   => $MainObject,
-    );
-    my $LayoutObject = Kernel::Output::HTML::Layout->new(
-        ConfigObject  => $ConfigObject,
-        LogObject     => $LogObject,
-        MainObject    => $MainObject,
-        TimeObject    => $TimeObject,
-        ParamObject   => $RequestObject,
-        EncodeObject  => $EncodeObject,
-        Lang          => 'de',
-    );
+From the web installer, a special Option C<InstallerOnly> is passed
+to indicate that a database connection is not yet available.
 
-    in addition for NavigationBar() you need
-        DBObject
-        SessionObject
-        UserID
-        TicketObject
-        GroupObject
-
-    in addition for AgentCustomerViewTable() you need
-        DBObject
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        LayoutObject {
+            InstallerOnly => 1,
+        },
+    );
+    my $LayoutObject = $Kernel::OM->Get('LayoutObject');
 
 =cut
 
@@ -100,21 +69,20 @@ sub new {
     # set debug
     $Self->{Debug} = 0;
 
-    # check needed objects
-    # Attention: NavigationBar() needs also SessionObject and some other objects
-    for my $Object (qw(ConfigObject LogObject TimeObject MainObject EncodeObject ParamObject)) {
-        if ( !$Self->{$Object} ) {
-            $Self->{LogObject}->Log(
-                Priority => 'error',
-                Message  => "Got no $Object!",
-            );
-            $Self->FatalError();
-        }
+    for my $Object (
+        qw(ConfigObject LogObject TimeObject MainObject EncodeObject
+        ParamObject HTMLUtilsObject JSONObject)
+        )
+    {
+        $Self->{$Object} //= $Kernel::OM->Get($Object);
     }
 
-    # create additional objects
-    $Self->{HTMLUtilsObject} = Kernel::System::HTMLUtils->new( %{$Self} );
-    $Self->{JSONObject}      = Kernel::System::JSON->new( %{$Self} );
+    # Some objects are not available if we are setting up the system (no DB connection)
+    if ( !$Param{InstallerOnly} ) {
+        for my $Object (qw(DBObject SessionObject TicketObject UserObject GroupObject)) {
+            $Self->{$Object} //= $Kernel::OM->Get($Object);
+        }
+    }
 
     # reset block data
     delete $Self->{BlockData};
@@ -128,7 +96,7 @@ sub new {
     }
 
     if ( $Self->{ConfigObject}->Get('TimeZoneUser') && $Self->{UserTimeZone} ) {
-        $Self->{UserTimeObject} = Kernel::System::Time->new(%Param);
+        $Self->{UserTimeObject} = Kernel::System::Time->new( %{$Self} );
     }
     else {
         $Self->{UserTimeObject} = $Self->{TimeObject};
@@ -158,15 +126,14 @@ sub new {
 
     # create language object
     if ( !$Self->{LanguageObject} ) {
-        $Self->{LanguageObject} = Kernel::Language->new(
-            UserTimeZone => $Self->{UserTimeZone},
-            UserLanguage => $Self->{UserLanguage},
-            LogObject    => $Self->{LogObject},
-            ConfigObject => $Self->{ConfigObject},
-            EncodeObject => $Self->{EncodeObject},
-            MainObject   => $Self->{MainObject},
-            Action       => $Self->{Action},
+        $Kernel::OM->ObjectParamAdd(
+            LanguageObject => {
+                UserTimeZone => $Self->{UserTimeZone},
+                UserLanguage => $Self->{UserLanguage},
+                Action       => $Self->{Action},
+            },
         );
+        $Self->{LanguageObject} = $Kernel::OM->Get('LanguageObject');
     }
 
     # set charset if there is no charset given
@@ -369,7 +336,21 @@ sub new {
     }
 
     # locate template files
-    $Self->{TemplateDir} = $Self->{ConfigObject}->Get('TemplateDir') . '/HTML/' . $Theme;
+    $Self->{TemplateDir}
+        = $Self->{ConfigObject}->Get('TemplateDir') . '/HTML/' . $Theme;
+    $Self->{StandardTemplateDir}
+        = $Self->{ConfigObject}->Get('TemplateDir') . '/HTML/' . 'Standard';
+
+    # Check if 'Standard' fallback exists
+    if ( !-e $Self->{StandardTemplateDir} ) {
+        $Self->{LogObject}->Log(
+            Priority => 'error',
+            Message =>
+                "No existing template directory found ('$Self->{TemplateDir}')! Check your Home in Kernel/Config.pm",
+        );
+        $Self->FatalDie();
+    }
+
     if ( !-e $Self->{TemplateDir} ) {
         $Self->{LogObject}->Log(
             Priority => 'error',
@@ -378,21 +359,15 @@ sub new {
                 Default theme used instead.",
         );
 
-        # Set TemplateDir to 'Standard' as a fallback and check if it exists.
+        # Set TemplateDir to 'Standard' as a fallback.
         $Theme = 'Standard';
-        $Self->{TemplateDir} = $Self->{ConfigObject}->Get('TemplateDir') . '/HTML/' . $Theme;
-        if ( !-e $Self->{TemplateDir} ) {
-            $Self->{LogObject}->Log(
-                Priority => 'error',
-                Message =>
-                    "No existing template directory found ('$Self->{TemplateDir}')! Check your Home in Kernel/Config.pm",
-            );
-            $Self->FatalDie();
-        }
+        $Self->{TemplateDir} = $Self->{StandardTemplateDir};
     }
 
     $Self->{CustomTemplateDir}
         = $Self->{ConfigObject}->Get('CustomTemplateDir') . '/HTML/' . $Theme;
+    $Self->{CustomStandardTemplateDir}
+        = $Self->{ConfigObject}->Get('CustomTemplateDir') . '/HTML/' . 'Standard';
 
     # load sub layout files
     my $Dir = $Self->{ConfigObject}->Get('TemplateDir') . '/HTML';
@@ -1074,7 +1049,7 @@ sub Header {
     }
     for my $Word (qw(Value Title Area)) {
         if ( $Param{$Word} ) {
-            $Param{TitleArea} .= $Self->{LanguageObject}->Get( $Param{$Word} ) . ' - ';
+            $Param{TitleArea} .= $Self->{LanguageObject}->Translate( $Param{$Word} ) . ' - ';
         }
     }
 
@@ -1218,7 +1193,8 @@ sub Footer {
 
     for my $ConfigElement ( sort keys %{$AutocompleteConfig} ) {
         $AutocompleteConfig->{$ConfigElement}->{ButtonText}
-            = $Self->{LanguageObject}->Get( $AutocompleteConfig->{$ConfigElement}->{ButtonText} );
+            = $Self->{LanguageObject}
+            ->Translate( $AutocompleteConfig->{$ConfigElement}->{ButtonText} );
     }
 
     my $AutocompleteConfigJSON = $Self->JSONEncode(
@@ -1332,7 +1308,7 @@ sub PrintHeader {
     }
     for my $Word (qw(Area Title Value)) {
         if ( $Param{$Word} ) {
-            $Param{TitleArea} .= ' - ' . $Self->{LanguageObject}->Get( $Param{$Word} );
+            $Param{TitleArea} .= ' - ' . $Self->{LanguageObject}->Translate( $Param{$Word} );
         }
     }
 
@@ -1706,14 +1682,14 @@ sub CustomerAgeInHours {
     # get hours
     if ( $Age >= 3600 ) {
         $AgeStrg .= int( ( $Age / 3600 ) ) . ' ';
-        $AgeStrg .= $Self->{LanguageObject}->Get($HourDsc);
+        $AgeStrg .= $Self->{LanguageObject}->Translate($HourDsc);
         $AgeStrg .= $Space;
     }
 
     # get minutes (just if age < 1 day)
     if ( $Age <= 3600 || int( ( $Age / 60 ) % 60 ) ) {
         $AgeStrg .= int( ( $Age / 60 ) % 60 ) . ' ';
-        $AgeStrg .= $Self->{LanguageObject}->Get($MinuteDsc);
+        $AgeStrg .= $Self->{LanguageObject}->Translate($MinuteDsc);
     }
     return $AgeStrg;
 }
@@ -1740,21 +1716,21 @@ sub CustomerAge {
     # get days
     if ( $Age >= 86400 ) {
         $AgeStrg .= int( ( $Age / 3600 ) / 24 ) . ' ';
-        $AgeStrg .= $Self->{LanguageObject}->Get($DayDsc);
+        $AgeStrg .= $Self->{LanguageObject}->Translate($DayDsc);
         $AgeStrg .= $Space;
     }
 
     # get hours
     if ( $Age >= 3600 ) {
         $AgeStrg .= int( ( $Age / 3600 ) % 24 ) . ' ';
-        $AgeStrg .= $Self->{LanguageObject}->Get($HourDsc);
+        $AgeStrg .= $Self->{LanguageObject}->Translate($HourDsc);
         $AgeStrg .= $Space;
     }
 
     # get minutes (just if age < 1 day)
     if ( $Self->{ConfigObject}->Get('TimeShowAlwaysLong') || $Age < 86400 ) {
         $AgeStrg .= int( ( $Age / 60 ) % 60 ) . ' ';
-        $AgeStrg .= $Self->{LanguageObject}->Get($MinuteDsc);
+        $AgeStrg .= $Self->{LanguageObject}->Translate($MinuteDsc);
     }
     return $AgeStrg;
 }
@@ -1902,11 +1878,12 @@ sub NoPermission {
 
     my $WithHeader = $Param{WithHeader} || 'yes';
 
-    my $TranslatableMessage = $Self->{LanguageObject}->Get(
-        "We are sorry, you do not have permissions anymore to access this ticket in its'current state. "
+    my $TranslatableMessage = $Self->{LanguageObject}->Translate(
+        "We are sorry, you do not have permissions anymore to access this ticket in its current state."
     );
     $TranslatableMessage .= '<br/>';
-    $TranslatableMessage .= $Self->{LanguageObject}->Get(" You can take one of the next actions:");
+    $TranslatableMessage
+        .= $Self->{LanguageObject}->Translate(" You can take one of the next actions:");
     $Param{Message} = $TranslatableMessage if ( !$Param{Message} );
 
     # get config option for possible next actions
@@ -2125,10 +2102,22 @@ sub Attachment {
             }
         }
 
+        my $URLEncodedFilename = URI::Escape::uri_escape_utf8( $Param{Filename} );
+
         # only deliver filename if needed
         if ($FilenameInHeader) {
-            $Output .= " filename=\"$Param{Filename}\"";
+
+            # Special handling for old IE (nonstandard).
+            if ( $Self->{Browser} eq 'MSIE' && $Self->{BrowserMajorVersion} <= 8 ) {
+                $Output .= " filename=\"$URLEncodedFilename\"";
+            }
+
+            # Use RFC5987 for modern browsers.
+            else {
+                $Output .= " filename=\"$Param{Filename}\"; filename*=utf-8''$URLEncodedFilename";
+            }
         }
+
     }
     $Output .= "\n";
 
@@ -2142,6 +2131,8 @@ sub Attachment {
         $Output .= "Pragma: no-cache\n";
     }
     $Output .= "Content-Length: $Param{Size}\n";
+    $Output .= "X-UA-Compatible: IE=edge,chrome=1\n";
+    $Output .= "X-Frame-Options: SAMEORIGIN\n";
 
     if ( $Param{Charset} ) {
         $Output .= "Content-Type: $Param{ContentType}; charset=$Param{Charset};\n\n";
@@ -2508,6 +2499,8 @@ sub NavigationBar {
             $ItemSub->{NameForID} = $ItemSub->{Name};
             $ItemSub->{NameForID} =~ s/[ &;]//ig;
             $ItemSub->{NameTop} = $Item->{NameForID};
+            $ItemSub->{Description}
+                ||= $ItemSub->{Name};    # use 'name' as fallback, this is shown as the link title
             $Self->Block(
                 Name => 'ItemAreaSubItem',    #$Item->{Block} || 'Item',
                 Data => {
@@ -2646,7 +2639,8 @@ sub BuildDateSelection {
     my $Validate = $Param{Validate} || 0;
 
     # Validate that the date is in the future (e. g. pending times)
-    my $ValidateDateInFuture = $Param{ValidateDateInFuture} || 0;
+    my $ValidateDateInFuture    = $Param{ValidateDateInFuture}    || 0;
+    my $ValidateDateNotInFuture = $Param{ValidateDateNotInFuture} || 0;
 
     my ( $s, $m, $h, $D, $M, $Y ) = $Self->{UserTimeObject}->SystemTime2Date(
         SystemTime => $Self->{UserTimeObject}->SystemTime() + $DiffTime,
@@ -2713,7 +2707,7 @@ sub BuildDateSelection {
             SelectedID  => int( $Param{ $Prefix . 'Year' } || $Y ),
             Translation => 0,
             Class       => $Validate ? 'Validate_DateYear' : '',
-            Title       => $Self->{LanguageObject}->Get('Year'),
+            Title       => $Self->{LanguageObject}->Translate('Year'),
         );
     }
     else {
@@ -2721,7 +2715,7 @@ sub BuildDateSelection {
             . ( $Validate ? "class=\"Validate_DateYear $Class\" " : "class=\"$Class\" " )
             . "name=\"${Prefix}Year\" id=\"${Prefix}Year\" size=\"4\" maxlength=\"4\" "
             . "title=\""
-            . $Self->{LanguageObject}->Get('Year')
+            . $Self->{LanguageObject}->Translate('Year')
             . "\" value=\""
             . sprintf( "%02d", ( $Param{ $Prefix . 'Year' } || $Y ) ) . "\"/>";
     }
@@ -2735,7 +2729,7 @@ sub BuildDateSelection {
             SelectedID  => int( $Param{ $Prefix . 'Month' } || $M ),
             Translation => 0,
             Class       => $Validate ? 'Validate_DateMonth' : '',
-            Title       => $Self->{LanguageObject}->Get('Month'),
+            Title       => $Self->{LanguageObject}->Translate('Month'),
         );
     }
     else {
@@ -2744,7 +2738,7 @@ sub BuildDateSelection {
             . ( $Validate ? "class=\"Validate_DateMonth $Class\" " : "class=\"$Class\" " )
             . "name=\"${Prefix}Month\" id=\"${Prefix}Month\" size=\"2\" maxlength=\"2\" "
             . "title=\""
-            . $Self->{LanguageObject}->Get('Month')
+            . $Self->{LanguageObject}->Translate('Month')
             . "\" value=\""
             . sprintf( "%02d", ( $Param{ $Prefix . 'Month' } || $M ) ) . "\"/>";
     }
@@ -2753,8 +2747,17 @@ sub BuildDateSelection {
     if ($Validate) {
         $DateValidateClasses
             .= "Validate_DateDay Validate_DateYear_${Prefix}Year Validate_DateMonth_${Prefix}Month";
+
+        if ( $Format eq 'DateInputFormatLong' ) {
+            $DateValidateClasses
+                .= " Validate_DateHour_${Prefix}Hour Validate_DateMinute_${Prefix}Minute";
+        }
+
         if ($ValidateDateInFuture) {
             $DateValidateClasses .= " Validate_DateInFuture";
+        }
+        if ($ValidateDateNotInFuture) {
+            $DateValidateClasses .= " Validate_DateNotInFuture";
         }
     }
 
@@ -2767,7 +2770,7 @@ sub BuildDateSelection {
             SelectedID  => int( $Param{ $Prefix . 'Day' } || $D ),
             Translation => 0,
             Class       => "$DateValidateClasses $Class",
-            Title       => $Self->{LanguageObject}->Get('Day'),
+            Title       => $Self->{LanguageObject}->Translate('Day'),
         );
     }
     else {
@@ -2775,7 +2778,7 @@ sub BuildDateSelection {
             . "class=\"$DateValidateClasses $Class\" "
             . "name=\"${Prefix}Day\" id=\"${Prefix}Day\" size=\"2\" maxlength=\"2\" "
             . "title=\""
-            . $Self->{LanguageObject}->Get('Day')
+            . $Self->{LanguageObject}->Translate('Day')
             . "\" value=\""
             . sprintf( "%02d", ( $Param{ $Prefix . 'Day' } || $D ) ) . "\"/>";
     }
@@ -2792,7 +2795,7 @@ sub BuildDateSelection {
                 : int($h),
                 Translation => 0,
                 Class       => $Validate ? ( 'Validate_DateHour ' . $Class ) : $Class,
-                Title       => $Self->{LanguageObject}->Get('Hours'),
+                Title       => $Self->{LanguageObject}->Translate('Hours'),
             );
         }
         else {
@@ -2800,7 +2803,7 @@ sub BuildDateSelection {
                 . ( $Validate ? "class=\"Validate_DateHour $Class\" " : "class=\"$Class\" " )
                 . "name=\"${Prefix}Hour\" id=\"${Prefix}Hour\" size=\"2\" maxlength=\"2\" "
                 . "title=\""
-                . $Self->{LanguageObject}->Get('Hours')
+                . $Self->{LanguageObject}->Translate('Hours')
                 . "\" value=\""
                 . sprintf(
                 "%02d",
@@ -2820,7 +2823,7 @@ sub BuildDateSelection {
                 : int($m),
                 Translation => 0,
                 Class       => $Validate ? ( 'Validate_DateMinute ' . $Class ) : $Class,
-                Title       => $Self->{LanguageObject}->Get('Minutes'),
+                Title       => $Self->{LanguageObject}->Translate('Minutes'),
             );
         }
         else {
@@ -2828,7 +2831,7 @@ sub BuildDateSelection {
                 . ( $Validate ? "class=\"Validate_DateMinute $Class\" " : "class=\"$Class\" " )
                 . "name=\"${Prefix}Minute\" id=\"${Prefix}Minute\" size=\"2\" maxlength=\"2\" "
                 . "title=\""
-                . $Self->{LanguageObject}->Get('Minutes')
+                . $Self->{LanguageObject}->Translate('Minutes')
                 . "\" value=\""
                 . sprintf(
                 "%02d",
@@ -2851,21 +2854,17 @@ sub BuildDateSelection {
 
     # optional checkbox
     if ($Optional) {
-        my $Checked       = '';
-        my $ValidateClass = '';
+        my $Checked = '';
         if ($Used) {
             $Checked = ' checked="checked"';
-        }
-        if ($Required) {
-            $ValidateClass = ' class="Validate_Required"';
         }
         $Output .= "<input type=\"checkbox\" name=\""
             . $Prefix
             . "Used\" id=\"" . $Prefix . "Used\" value=\"1\""
             . $Checked
-            . $ValidateClass
+            . " class=\"$Class\""
             . " title=\""
-            . $Self->{LanguageObject}->Get('Check to activate this date')
+            . $Self->{LanguageObject}->Translate('Check to activate this date')
             . "\" />&nbsp;";
     }
 
@@ -2885,7 +2884,8 @@ sub BuildDateSelection {
         Year: $("#" + Core.App.EscapeSelector("' . $Prefix . '") + "Year"),
         Hour: $("#" + Core.App.EscapeSelector("' . $Prefix . '") + "Hour"),
         Minute: $("#" + Core.App.EscapeSelector("' . $Prefix . '") + "Minute"),
-        DateInFuture: ' . ( $ValidateDateInFuture ? 'true' : 'false' ) . ',
+        DateInFuture: ' .    ( $ValidateDateInFuture    ? 'true' : 'false' ) . ',
+        DateNotInFuture: ' . ( $ValidateDateNotInFuture ? 'true' : 'false' ) . ',
         WeekDayStart: ' . $WeekDayStart . '
     });';
     $Self->AddJSOnDocumentComplete( Code => $DatepickerJS );
@@ -2898,7 +2898,7 @@ sub CustomerLogin {
     my ( $Self, %Param ) = @_;
 
     my $Output = '';
-    $Param{TitleArea} = $Self->{LanguageObject}->Get('Login') . ' - ';
+    $Param{TitleArea} = $Self->{LanguageObject}->Translate('Login') . ' - ';
 
     # set Action parameter for the loader
     $Self->{Action} = 'CustomerLogin';
@@ -3044,7 +3044,7 @@ sub CustomerHeader {
     }
     for my $Word (qw(Value Title Area)) {
         if ( $Param{$Word} ) {
-            $Param{TitleArea} .= $Self->{LanguageObject}->Get( $Param{$Word} ) . ' - ';
+            $Param{TitleArea} .= $Self->{LanguageObject}->Translate( $Param{$Word} ) . ' - ';
         }
     }
 
@@ -3166,7 +3166,8 @@ sub CustomerFooter {
 
     for my $ConfigElement ( sort keys %{$AutocompleteConfig} ) {
         $AutocompleteConfig->{$ConfigElement}->{ButtonText}
-            = $Self->{LanguageObject}->Get( $AutocompleteConfig->{$ConfigElement}{ButtonText} );
+            = $Self->{LanguageObject}
+            ->Translate( $AutocompleteConfig->{$ConfigElement}{ButtonText} );
     }
 
     my $AutocompleteConfigJSON = $Self->JSONEncode(
@@ -3848,6 +3849,8 @@ sub RichTextDocumentServe {
         $Param{Attachments}->{$AttachmentID}->{ContentID} =~ s/^<//;
         $Param{Attachments}->{$AttachmentID}->{ContentID} =~ s/>$//;
 
+        next ATTACHMENT if !$Param{Attachments}->{$AttachmentID}->{ContentID};
+
         $Param{Data}->{Content} =~ s{
         (=|"|')(\Q$Param{Attachments}->{$AttachmentID}->{ContentID}\E)("|'|>|\/>|\s)
     }
@@ -3977,7 +3980,7 @@ sub _BuildSelectionOptionRefCreate {
     {
         my %SelectedValueNew;
         for my $OriginalKey ( sort keys %{ $OptionRef->{SelectedValue} } ) {
-            my $TranslatedKey = $Self->{LanguageObject}->Get($OriginalKey);
+            my $TranslatedKey = $Self->{LanguageObject}->Translate($OriginalKey);
             $SelectedValueNew{$TranslatedKey} = 1;
         }
         $OptionRef->{SelectedValue} = \%SelectedValueNew;
@@ -4108,9 +4111,6 @@ sub _BuildSelectionDataRefCreate {
 
     # dclone $Param{Data} because the subroutine unfortunately modifies
     # the original data ref
-    if ( !$Self->{MainObject}->Require("Storable") ) {
-        $Self->FatalError();
-    }
     my $DataLocal = Storable::dclone( $Param{Data} );
 
     # if HashRef was given
@@ -4163,7 +4163,7 @@ sub _BuildSelectionDataRefCreate {
         # translate value
         if ( $OptionRef->{Translation} ) {
             for my $Row ( sort keys %{$DataLocal} ) {
-                $DataLocal->{$Row} = $Self->{LanguageObject}->Get( $DataLocal->{$Row} );
+                $DataLocal->{$Row} = $Self->{LanguageObject}->Translate( $DataLocal->{$Row} );
             }
         }
 
@@ -4227,7 +4227,7 @@ sub _BuildSelectionDataRefCreate {
                 # translate value
                 if ( $OptionRef->{Translation} ) {
                     $DataRef->[$Counter]->{Value}
-                        = $Self->{LanguageObject}->Get( $DataRef->[$Counter]->{Value} );
+                        = $Self->{LanguageObject}->Translate( $DataRef->[$Counter]->{Value} );
                 }
 
                 # set Selected and Disabled options
@@ -4294,7 +4294,7 @@ sub _BuildSelectionDataRefCreate {
         if ( $OptionRef->{Translation} ) {
             my @TranslateArray;
             for my $Row ( @{$DataLocal} ) {
-                my $TranslateString = $Self->{LanguageObject}->Get($Row);
+                my $TranslateString = $Self->{LanguageObject}->Translate($Row);
                 push @TranslateArray, $TranslateString;
                 $ReverseHash{$TranslateString} = $Row;
             }
@@ -4505,7 +4505,7 @@ sub _BuildSelectionOutput {
         $String .= '</select>';
 
         if ( $Param{TreeView} ) {
-            my $TreeSelectionMessage = $Self->{LanguageObject}->Get("Show Tree Selection");
+            my $TreeSelectionMessage = $Self->{LanguageObject}->Translate("Show Tree Selection");
             $String
                 .= ' <a href="#" title="'
                 . $TreeSelectionMessage

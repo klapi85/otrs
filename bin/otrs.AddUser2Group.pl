@@ -28,29 +28,19 @@ use lib dirname($RealBin);
 use lib dirname($RealBin) . '/Kernel/cpan-lib';
 use lib dirname($RealBin) . '/Custom';
 
-use Kernel::Config;
-use Kernel::System::Encode;
-use Kernel::System::Log;
-use Kernel::System::Time;
-use Kernel::System::DB;
-use Kernel::System::Main;
-use Kernel::System::User;
-use Kernel::System::Group;
-
-my %CommonObject;
+use Kernel::System::ObjectManager;
 
 # create common objects
-$CommonObject{ConfigObject} = Kernel::Config->new(%CommonObject);
-$CommonObject{EncodeObject} = Kernel::System::Encode->new(%CommonObject);
-$CommonObject{LogObject}    = Kernel::System::Log->new(
-    LogPrefix => 'OTRS-otrs.AddUser2Group',
-    %CommonObject,
+local $Kernel::OM = Kernel::System::ObjectManager->new(
+    LogObject => {
+        LogPrefix => 'OTRS-otrs.AddUser2Group',
+    },
 );
-$CommonObject{TimeObject}  = Kernel::System::Time->new(%CommonObject);
-$CommonObject{MainObject}  = Kernel::System::Main->new(%CommonObject);
-$CommonObject{DBObject}    = Kernel::System::DB->new(%CommonObject);
-$CommonObject{UserObject}  = Kernel::System::User->new(%CommonObject);
-$CommonObject{GroupObject} = Kernel::System::Group->new(%CommonObject);
+my %CommonObject = $Kernel::OM->ObjectHash(
+    Objects => [
+        qw(ConfigObject EncodeObject LogObject TimeObject MainObject DBObject UserObject GroupObject)
+    ],
+);
 
 my %Param;
 my %Opts;
@@ -74,19 +64,17 @@ $Param{Permission}->{ $Opts{p} } = 1;
 $Param{UserLogin}                = $Opts{u};
 $Param{Group}                    = $Opts{g};
 
-unless (
-    $Param{UID}
-    =
-    $CommonObject{UserObject}->UserLookup( UserLogin => $Param{UserLogin} )
-    )
+$Param{UID} = $CommonObject{UserObject}->UserLookup( UserLogin => $Param{UserLogin} );
+if ( !$Param{UID} )
 {
     print STDERR "ERROR: Failed to get User ID. Perhaps non-existent user..\n";
     exit 1;
 }
 
-unless ( $Param{GID} = $CommonObject{GroupObject}->GroupLookup(%Param) ) {
-    print STDERR
-        "ERROR: Failed to get Group ID. Perhaps non-existent group..\n";
+$Param{GID} = $CommonObject{GroupObject}->GroupLookup(%Param);
+
+if ( !$Param{GID} ) {
+    print STDERR "ERROR: Failed to get Group ID. Perhaps non-existent group..\n";
     exit;
 }
 

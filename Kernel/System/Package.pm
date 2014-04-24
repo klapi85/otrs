@@ -21,7 +21,10 @@ use Kernel::System::Loader;
 use Kernel::System::SysConfig;
 use Kernel::System::WebUserAgent;
 use Kernel::System::XML;
+use Kernel::System::EventHandler;
 use Kernel::System::VariableCheck qw(:all);
+
+use base qw(Kernel::System::EventHandler);
 
 =head1 NAME
 
@@ -41,45 +44,9 @@ All functions to manage application packages/modules.
 
 create an object
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-    use Kernel::System::Time;
-    use Kernel::System::Package;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $TimeObject = Kernel::System::Time->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-    );
-    my $PackageObject = Kernel::System::Package->new(
-        LogObject    => $LogObject,
-        ConfigObject => $ConfigObject,
-        TimeObject   => $TimeObject,
-        DBObject     => $DBObject,
-        EncodeObject => $EncodeObject,
-        MainObject   => $MainObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $PackageObject = $Kernel::OM->Get('PackageObject');
 
 =cut
 
@@ -98,7 +65,7 @@ sub new {
     # create additional objects
     $Self->{JSONObject}   = Kernel::System::JSON->new( %{$Self} );
     $Self->{XMLObject}    = Kernel::System::XML->new( %{$Self} );
-    $Self->{CacheObject}  = Kernel::System::Cache->new( %{$Self} );
+    $Self->{CacheObject}  = $Kernel::OM->Get('CacheObject');
     $Self->{LoaderObject} = Kernel::System::Loader->new( %{$Self} );
 
     $Self->{PackageMap} = {
@@ -148,13 +115,22 @@ sub new {
             . "Try: \$OTRS_HOME/bin/otrs.SetPermissions.pl !!!\n";
     }
 
+    # init of event handler
+    $Self->EventHandlerInit(
+        Config     => 'Package::EventModule',
+        BaseObject => 'PackageObject',
+        Objects    => {
+            %{$Self},
+        },
+    );
+
     return $Self;
 }
 
 =item RepositoryList()
 
 returns a list of repository packages
-using Result => 'short' will only return name, version, install_status and md5sums
+using Result => 'short' will only return name, version, install_status md5sum and vendor
 instead of the structure
 
     my @List = $PackageObject->RepositoryList();
@@ -182,7 +158,7 @@ sub RepositoryList {
 
     # get repository list
     $Self->{DBObject}->Prepare(
-        SQL => 'SELECT name, version, install_status, content '
+        SQL => 'SELECT name, version, install_status, content, vendor '
             . 'FROM package_repository ORDER BY name, create_time',
     );
 
@@ -193,6 +169,7 @@ sub RepositoryList {
             Name    => $Row[0],
             Version => $Row[1],
             Status  => $Row[2],
+            Vendor  => $Row[4],
         );
 
         # correct any 'dos-style' line endings - http://bugs.otrs.org/show_bug.cgi?id=9838
@@ -539,6 +516,17 @@ sub PackageInstall {
     $Self->{CacheObject}->CleanUp();
     $Self->{LoaderObject}->CacheDelete();
 
+    # trigger event
+    $Self->EventHandler(
+        Event => 'PackageInstall',
+        Data  => {
+            Name    => $Structure{Name}->{Content},
+            Vendor  => $Structure{Vendor}->{Content},
+            Version => $Structure{Version}->{Content},
+        },
+        UserID => 1,
+    );
+
     return 1;
 }
 
@@ -605,6 +593,17 @@ sub PackageReinstall {
 
     $Self->{CacheObject}->CleanUp();
     $Self->{LoaderObject}->CacheDelete();
+
+    # trigger event
+    $Self->EventHandler(
+        Event => 'PackageReinstall',
+        Data  => {
+            Name    => $Structure{Name}->{Content},
+            Vendor  => $Structure{Vendor}->{Content},
+            Version => $Structure{Version}->{Content},
+        },
+        UserID => 1,
+    );
 
     return 1;
 }
@@ -899,6 +898,17 @@ sub PackageUpgrade {
     $Self->{CacheObject}->CleanUp();
     $Self->{LoaderObject}->CacheDelete();
 
+    # trigger event
+    $Self->EventHandler(
+        Event => 'PackageUpgrade',
+        Data  => {
+            Name    => $Structure{Name}->{Content},
+            Vendor  => $Structure{Vendor}->{Content},
+            Version => $Structure{Version}->{Content},
+        },
+        UserID => 1,
+    );
+
     return 1;
 }
 
@@ -977,6 +987,17 @@ sub PackageUninstall {
 
     $Self->{CacheObject}->CleanUp();
     $Self->{LoaderObject}->CacheDelete();
+
+    # trigger event
+    $Self->EventHandler(
+        Event => 'PackageUninstall',
+        Data  => {
+            Name    => $Structure{Name}->{Content},
+            Vendor  => $Structure{Vendor}->{Content},
+            Version => $Structure{Version}->{Content},
+        },
+        UserID => 1,
+    );
 
     return 1;
 }
@@ -3168,6 +3189,15 @@ sub _PackageUninstallMerged {
     $Self->{LoaderObject}->CacheDelete();
 
     return $PackageRemove;
+}
+
+sub DESTROY {
+    my $Self = shift;
+
+    # execute all transaction events
+    $Self->EventHandlerTransaction();
+
+    return 1;
 }
 
 1;

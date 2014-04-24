@@ -218,7 +218,10 @@ sub Run {
             # notify info
             my %Ticket = $Self->{TicketObject}->TicketGet( TicketID => $Self->{TicketID} );
             $Output .= $Self->{LayoutObject}->Notify(
-                Info => 'Ticket "%s" created!", "' . $Ticket{TicketNumber},
+                Info => $Self->{LayoutObject}->{LanguageObject}->Translate(
+                    'Ticket "%s" created!',
+                    $Ticket{TicketNumber},
+                ),
                 Link => $Self->{LayoutObject}->{Baselink}
                     . 'Action=AgentTicketZoom;TicketID='
                     . $Ticket{TicketID},
@@ -785,7 +788,8 @@ sub Run {
                 Param => 'FileUpload',
             );
             $Self->{UploadCacheObject}->FormIDAddFile(
-                FormID => $Self->{FormID},
+                FormID      => $Self->{FormID},
+                Disposition => 'attachment',
                 %UploadStuff,
             );
         }
@@ -1078,6 +1082,31 @@ sub Run {
 
         if (%Error) {
 
+            # get and format default subject and body
+            my $Subject = $Self->{LayoutObject}->Output(
+                Template => $Self->{Config}->{Subject} || '',
+            );
+
+            my $Body = $Self->{LayoutObject}->Output(
+                Template => $Self->{Config}->{Body} || '',
+            );
+
+            # make sure body is rich text
+            if ( $Self->{LayoutObject}->{BrowserRichText} ) {
+                $Body = $Self->{LayoutObject}->Ascii2RichText(
+                    String => $Body,
+                );
+            }
+
+            #set Body and Subject parameters for Output
+            if ( !$GetParam{Subject} ) {
+                $GetParam{Subject} = $Subject;
+            }
+
+            if ( !$GetParam{Body} ) {
+                $GetParam{Body} = $Body;
+            }
+
             # get services
             my $Services = $Self->_GetServices(
                 %GetParam,
@@ -1225,7 +1254,12 @@ sub Run {
             ATTACHMENT:
             for my $Attachment (@AttachmentData) {
                 my $ContentID = $Attachment->{ContentID};
-                if ($ContentID) {
+                if (
+                    $ContentID
+                    && ( $Attachment->{ContentType} =~ /image/i )
+                    && ( $Attachment->{Disposition} eq 'inline' )
+                    )
+                {
                     my $ContentIDHTMLQuote = $Self->{LayoutObject}->Ascii2Html(
                         Text => $ContentID,
                     );
@@ -1607,7 +1641,8 @@ sub Run {
                 for ( sort keys %AllStdAttachments ) {
                     my %AttachmentsData = $StdAttachmentObject->StdAttachmentGet( ID => $_ );
                     $Self->{UploadCacheObject}->FormIDAddFile(
-                        FormID => $Self->{FormID},
+                        FormID      => $Self->{FormID},
+                        Disposition => 'attachment',
                         %AttachmentsData,
                     );
                 }
@@ -1699,7 +1734,7 @@ sub Run {
                     Data         => $StandardTemplates,
                     SelectedID   => $GetParam{StandardTemplateID},
                     PossibleNone => 1,
-                    Translation  => 0,
+                    Translation  => 1,
                     Max          => 100,
                 },
                 @DynamicFieldAJAX,
@@ -2289,7 +2324,7 @@ sub _MaskPhoneNew {
             SelectedID => $Param{StandardTemplateID} || '',
             PossibleNone => 1,
             Sort         => 'AlphanumericValue',
-            Translation  => 0,
+            Translation  => 1,
             Max          => 200,
         );
         $Self->{LayoutObject}->Block(
@@ -2461,7 +2496,15 @@ sub _MaskPhoneNew {
     # show attachments
     ATTACHMENT:
     for my $Attachment ( @{ $Param{Attachments} } ) {
-        next ATTACHMENT if $Attachment->{ContentID} && $Self->{LayoutObject}->{BrowserRichText};
+        if (
+            $Attachment->{ContentID}
+            && $Self->{LayoutObject}->{BrowserRichText}
+            && ( $Attachment->{ContentType} =~ /image/i )
+            && ( $Attachment->{Disposition} eq 'inline' )
+            )
+        {
+            next ATTACHMENT;
+        }
         $Self->{LayoutObject}->Block(
             Name => 'Attachment',
             Data => $Attachment,

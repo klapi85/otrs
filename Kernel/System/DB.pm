@@ -15,7 +15,6 @@ use warnings;
 
 use DBI;
 
-use Kernel::System::Time;
 use Kernel::System::VariableCheck qw(:all);
 
 =head1 NAME
@@ -34,44 +33,26 @@ All database functions to connect/insert/update/delete/... to a database.
 
 =item new()
 
-create database object with database connect
+create database object, with database connect..
+Usually you do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-        # if you don't supply the following parameters, the ones found in
-        # Kernel/Config.pm are used instead:
-        DatabaseDSN  => 'DBI:odbc:database=123;host=localhost;',
-        DatabaseUser => 'user',
-        DatabasePw   => 'somepass',
-        Type         => 'mysql',
-        Attribute => {
-            LongTruncOk => 1,
-            LongReadLen => 100*1024,
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        DBObject => {
+            # if you don't supply the following parameters, the ones found in
+            # Kernel/Config.pm are used instead:
+            DatabaseDSN  => 'DBI:odbc:database=123;host=localhost;',
+            DatabaseUser => 'user',
+            DatabasePw   => 'somepass',
+            Type         => 'mysql',
+            Attribute => {
+                LongTruncOk => 1,
+                LongReadLen => 100*1024,
+            },
+            AutoConnectNo => 0, # 0|1 disable auto-connect to database in constructor
         },
-        AutoConnectNo => 0, # 0|1 disable auto-connect to database in constructor
     );
+    my $DBObject = $Kernel::OM->Get('DBObject');
 
 =cut
 
@@ -79,28 +60,16 @@ sub new {
     my ( $Type, %Param ) = @_;
 
     # allocate new hash for object
-    my $Self = {};
+    my $Self = {
+        $Kernel::OM->ObjectHash(
+            Objects =>
+                [qw(ConfigObject LogObject MainObject EncodeObject TimeObject)]
+            )
+    };
     bless( $Self, $Type );
 
     # 0=off; 1=updates; 2=+selects; 3=+Connects;
     $Self->{Debug} = $Param{Debug} || 0;
-
-    # get needed objects
-    for my $Needed (qw(ConfigObject LogObject MainObject EncodeObject)) {
-        if ( $Param{$Needed} ) {
-            $Self->{$Needed} = $Param{$Needed};
-        }
-        else {
-            die "Got no $Needed!";
-        }
-    }
-
-    if ( $Param{TimeObject} ) {
-        $Self->{TimeObject} = $Param{TimeObject};
-    }
-    else {
-        $Self->{TimeObject} = Kernel::System::Time->new( %{$Self} );
-    }
 
     # get config data
     $Self->{DSN}  = $Param{DatabaseDSN}  || $Self->{ConfigObject}->Get('DatabaseDSN');
@@ -181,41 +150,6 @@ sub new {
     {
         if ( defined $Param{$_} ) {
             $Self->{Backend}->{"DB::$_"} = $Param{$_};
-        }
-    }
-
-    # Check for registered listener objects
-    $Self->{DBListeners} = [];
-
-    my $DBListeners = $Self->{ConfigObject}->Get('DB::DBListener');
-
-    if ( IsHashRefWithData($DBListeners) ) {
-
-        KEY:
-        for my $Key ( sort keys %{$DBListeners} ) {
-
-            if ( IsHashRefWithData( $DBListeners->{$Key} ) && $DBListeners->{$Key}->{Object} ) {
-                my $Object = $DBListeners->{$Key}->{Object};
-                if ( !$Self->{MainObject}->Require($Object) ) {
-                    $Self->{'LogObject'}->Log(
-                        'Priority' => 'error',
-                        'Message'  => "Could not load module $Object",
-                    );
-
-                    next KEY;
-                }
-                my $Instance = $Object->new( %{$Self} );
-                if ( ref $Instance ne $Object ) {
-                    $Self->{'LogObject'}->Log(
-                        'Priority' => 'error',
-                        'Message'  => "Could not instantiate module $Object",
-                    );
-
-                    next KEY;
-                }
-
-                push @{ $Self->{DBListeners} }, $Instance;
-            }
         }
     }
 
@@ -496,10 +430,6 @@ sub Do {
         );
     }
 
-    for my $DBListener ( @{ $Self->{DBListeners} } ) {
-        $DBListener->PreDo( SQL => $Param{SQL}, Bind => \@Array );
-    }
-
     # send sql to database
     if ( !$Self->{dbh}->do( $Param{SQL}, undef, @Array ) ) {
         $Self->{LogObject}->Log(
@@ -508,10 +438,6 @@ sub Do {
             Message  => "$DBI::errstr, SQL: '$Param{SQL}'",
         );
         return;
-    }
-
-    for my $DBListener ( @{ $Self->{DBListeners} } ) {
-        $DBListener->PostDo( SQL => $Param{SQL}, Bind => \@Array );
     }
 
     return 1;
@@ -627,10 +553,6 @@ sub Prepare {
         }
     }
 
-    for my $DBListener ( @{ $Self->{DBListeners} } ) {
-        $DBListener->PrePrepare( SQL => $SQL, Bind => \@Array );
-    }
-
     # do
     if ( !( $Self->{Cursor} = $Self->{dbh}->prepare($SQL) ) ) {
         $Self->{LogObject}->Log(
@@ -648,10 +570,6 @@ sub Prepare {
             Message  => "$DBI::errstr, SQL: '$SQL'",
         );
         return;
-    }
-
-    for my $DBListener ( @{ $Self->{DBListeners} } ) {
-        $DBListener->PostPrepare( SQL => $SQL, Bind => \@Array );
     }
 
     # slow log feature

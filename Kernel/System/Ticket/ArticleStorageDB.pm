@@ -134,7 +134,7 @@ sub ArticleDeletePlain {
     );
 
     # return if we only need to check one backend
-    return 1 unless $Self->{CheckAllBackends};
+    return 1 if !$Self->{CheckAllBackends};
 
     # return of only delete in my backend
     return 1 if $Param{OnlyMyBackend};
@@ -172,7 +172,7 @@ sub ArticleDeleteAttachment {
     );
 
     # return if we only need to check one backend
-    return 1 unless $Self->{CheckAllBackends};
+    return 1 if !$Self->{CheckAllBackends};
 
     # return if only delete in my backend
     return 1 if $Param{OnlyMyBackend};
@@ -277,16 +277,24 @@ sub ArticleWriteAttachment {
         $Param{ContentID} =~ s/^([^<].*[^>])$/<$1>/;
     }
 
+    my $Disposition;
+    my $Filename;
+    if ( $Param{Disposition} ) {
+        ( $Disposition, $Filename ) = split ';', $Param{Disposition};
+    }
+    $Disposition //= '';
+
     # write attachment to db
     return if !$Self->{DBObject}->Do(
-        SQL => 'INSERT INTO article_attachment '
-            . ' (article_id, filename, content_type, content_size, content, '
-            . ' content_id, content_alternative, create_time, create_by, change_time, change_by) '
-            . ' VALUES (?, ?, ?, ?, ?, ?, ?, current_timestamp, ?, current_timestamp, ?)',
+        SQL => '
+            INSERT INTO article_attachment (article_id, filename, content_type, content_size,
+                content, content_id, content_alternative, disposition, create_time, create_by,
+                change_time, change_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp, ?, current_timestamp, ?)',
         Bind => [
             \$Param{ArticleID}, \$Param{Filename}, \$Param{ContentType}, \$Param{Filesize},
             \$Param{Content}, \$Param{ContentID}, \$Param{ContentAlternative},
-            \$Param{UserID}, \$Param{UserID},
+            \$Disposition, \$Param{UserID}, \$Param{UserID},
         ],
     );
     return 1;
@@ -325,7 +333,7 @@ sub ArticlePlain {
     return $Data if defined $Data;
 
     # return if we only need to check one backend
-    return unless $Self->{CheckAllBackends};
+    return if !$Self->{CheckAllBackends};
 
     # return of only delete in my backend
     return if $Param{OnlyMyBackend};
@@ -369,17 +377,17 @@ sub ArticleAttachmentIndexRaw {
         return;
     }
 
-    # get ContentPath if not given
-    if ( !$Param{ContentPath} ) {
-        $Param{ContentPath} = $Self->ArticleGetContentPath( ArticleID => $Param{ArticleID} ) || '';
-    }
     my %Index;
     my $Counter = 0;
 
     # try database
     return if !$Self->{DBObject}->Prepare(
-        SQL => 'SELECT filename, content_type, content_size, content_id, content_alternative'
-            . ' FROM article_attachment WHERE article_id = ? ORDER BY filename, id',
+        SQL => '
+            SELECT filename, content_type, content_size, content_id, content_alternative,
+                disposition
+            FROM article_attachment
+            WHERE article_id = ?
+            ORDER BY filename, id',
         Bind => [ \$Param{ArticleID} ],
     );
     while ( my @Row = $Self->{DBObject}->FetchrowArray() ) {
@@ -398,6 +406,26 @@ sub ArticleAttachmentIndexRaw {
             }
         }
 
+        my $Disposition = $Row[5];
+        if ( !$Disposition ) {
+
+            # if no content disposition is set images with content id should be inline
+            if ( $Row[3] && $Row[1] =~ m{image}i ) {
+                $Disposition = 'inline';
+            }
+
+            # converted article body should be inline
+            elsif ( $Row[0] =~ m{file-[12]} ) {
+                $Disposition = 'inline'
+            }
+
+            # all others including attachments with content id that are not images
+            #   should NOT be inline
+            else {
+                $Disposition = 'attachment';
+            }
+        }
+
         # add the info the the hash
         $Counter++;
         $Index{$Counter} = {
@@ -407,6 +435,7 @@ sub ArticleAttachmentIndexRaw {
             ContentType        => $Row[1],
             ContentID          => $Row[3] || '',
             ContentAlternative => $Row[4] || '',
+            Disposition        => $Disposition,
         };
     }
 
@@ -414,10 +443,15 @@ sub ArticleAttachmentIndexRaw {
     return %Index if %Index;
 
     # return if we only need to check one backend
-    return unless $Self->{CheckAllBackends};
+    return if !$Self->{CheckAllBackends};
 
     # return if only delete in my backend
     return if $Param{OnlyMyBackend};
+
+    # get ContentPath if not given
+    if ( !$Param{ContentPath} ) {
+        $Param{ContentPath} = $Self->ArticleGetContentPath( ArticleID => $Param{ArticleID} ) || '';
+    }
 
     # try fs (if there is no index in fs)
     my @List = $Self->{MainObject}->DirectoryRead(
@@ -435,6 +469,7 @@ sub ArticleAttachmentIndexRaw {
         next FILENAME if $Filename =~ /\.content_alternative$/;
         next FILENAME if $Filename =~ /\.content_id$/;
         next FILENAME if $Filename =~ /\.content_type$/;
+        next FILENAME if $Filename =~ /\.disposition$/;
         next FILENAME if $Filename =~ /\/plain.txt$/;
 
         # human readable file size
@@ -454,6 +489,7 @@ sub ArticleAttachmentIndexRaw {
         my $ContentType = '';
         my $ContentID   = '';
         my $Alternative = '';
+        my $Disposition = '';
         if ( -e "$Filename.content_type" ) {
             my $Content = $Self->{MainObject}->FileRead(
                 Location => "$Filename.content_type",
@@ -479,6 +515,32 @@ sub ArticleAttachmentIndexRaw {
                 if ($Content) {
                     $Alternative = ${$Content};
                 }
+            }
+
+            # disposition
+            if ( -e "$Filename.disposition" ) {
+                my $Content = $Self->{MainObject}->FileRead(
+                    Location => "$Filename.disposition",
+                );
+                if ($Content) {
+                    $Disposition = ${$Content};
+                }
+            }
+
+            # if no content disposition is set images with content id should be inline
+            elsif ( $ContentID && $ContentType =~ m{image}i ) {
+                $Disposition = 'inline';
+            }
+
+            # converted article body should be inline
+            elsif ( $Filename =~ m{file-[12]} ) {
+                $Disposition = 'inline'
+            }
+
+            # all others including attachments with content id that are not images
+            #   should NOT be inline
+            else {
+                $Disposition = 'attachment';
             }
         }
 
@@ -534,8 +596,11 @@ sub ArticleAttachment {
 
     # try database
     return if !$Self->{DBObject}->Prepare(
-        SQL => 'SELECT content_type, content, content_id, content_alternative'
-            . ' FROM article_attachment WHERE article_id = ? ORDER BY filename, id',
+        SQL => '
+            SELECT content_type, content, content_id, content_alternative, disposition, filename
+            FROM article_attachment
+            WHERE article_id = ?
+            ORDER BY filename, id',
         Bind   => [ \$Param{ArticleID} ],
         Limit  => $Param{FileID},
         Encode => [ 1, 0, 0, 0 ],
@@ -550,13 +615,34 @@ sub ArticleAttachment {
         else {
             $Data{Content} = $Row[1];
         }
-        $Data{ContentID}          = $Row[2];
-        $Data{ContentAlternative} = $Row[3];
+        $Data{ContentID}          = $Row[2] || '';
+        $Data{ContentAlternative} = $Row[3] || '';
+        $Data{Disposition}        = $Row[4];
+        $Data{Filename}           = $Row[5];
     }
+    if ( !$Data{Disposition} ) {
+
+        # if no content disposition is set images with content id should be inline
+        if ( $Data{ContentID} && $Data{ContentType} =~ m{image}i ) {
+            $Data{Disposition} = 'inline';
+        }
+
+        # converted article body should be inline
+        elsif ( $Data{Filename} =~ m{file-[12]} ) {
+            $Data{Disposition} = 'inline'
+        }
+
+        # all others including attachments with content id that are not images
+        #   should NOT be inline
+        else {
+            $Data{Disposition} = 'attachment';
+        }
+    }
+
     return %Data if defined $Data{Content};
 
     # return if we only need to check one backend
-    return unless $Self->{CheckAllBackends};
+    return if !$Self->{CheckAllBackends};
 
     # return if only delete in my backend
     return if $Param{OnlyMyBackend};
@@ -577,6 +663,7 @@ sub ArticleAttachment {
             next FILENAME if $Filename =~ /\.content_alternative$/;
             next FILENAME if $Filename =~ /\.content_id$/;
             next FILENAME if $Filename =~ /\.content_type$/;
+            next FILENAME if $Filename =~ /\.disposition$/;
             next FILENAME if $Filename =~ /\/plain.txt$/;
 
             # add the info the the hash
@@ -618,6 +705,32 @@ sub ArticleAttachment {
                         if ($Content) {
                             $Data{Alternative} = ${$Content};
                         }
+                    }
+
+                    # disposition
+                    if ( -e "$Filename.disposition" ) {
+                        my $Content = $Self->{MainObject}->FileRead(
+                            Location => "$Filename.disposition",
+                        );
+                        if ($Content) {
+                            $Data{Disposition} = ${$Content};
+                        }
+                    }
+
+                    # if no content disposition is set images with content id should be inline
+                    elsif ( $Data{ContentID} && $Data{ContentType} =~ m{image}i ) {
+                        $Data{Disposition} = 'inline';
+                    }
+
+                    # converted article body should be inline
+                    elsif ( $Filename =~ m{file-[12]} ) {
+                        $Data{Disposition} = 'inline'
+                    }
+
+                    # all others including attachments with content id that are not images
+                    #   should NOT be inline
+                    else {
+                        $Data{Disposition} = 'attachment';
                     }
                 }
                 else {

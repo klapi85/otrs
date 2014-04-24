@@ -292,12 +292,12 @@ sub Form {
         # prepare body, subject, ReplyTo ...
         $Data{Body} = '<br/>' . $Data{Body};
         if ( $Data{Created} ) {
-            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get('Date') .
+            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate('Date') .
                 ": $Data{Created}<br/>" . $Data{Body};
         }
         for my $Key (qw( Subject ReplyTo Reply-To Cc To From )) {
             if ( $Data{$Key} ) {
-                my $KeyText = $Self->{LayoutObject}->{LanguageObject}->Get($Key);
+                my $KeyText = $Self->{LayoutObject}->{LanguageObject}->Translate($Key);
 
                 my $Value = $Self->{LayoutObject}->Ascii2RichText(
                     String => $Data{$Key},
@@ -327,9 +327,9 @@ sub Form {
         );
 
         my $ForwardedMessageFrom
-            = $Self->{LayoutObject}->{LanguageObject}->Get('Forwarded message from');
+            = $Self->{LayoutObject}->{LanguageObject}->Translate('Forwarded message from');
         my $EndForwardedMessage
-            = $Self->{LayoutObject}->{LanguageObject}->Get('End forwarded message');
+            = $Self->{LayoutObject}->{LanguageObject}->Translate('End forwarded message');
 
         $Data{Body} = "<br/>---- $ForwardedMessageFrom $From ---<br/><br/>" . $Data{Body};
         $Data{Body} .= "<br/>---- $EndForwardedMessage ---<br/>";
@@ -354,20 +354,20 @@ sub Form {
             $Data{Body} = "\n" . $Data{Body};
         }
         if ( $Data{Created} ) {
-            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get('Date') .
+            $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate('Date') .
                 ": $Data{Created}\n" . $Data{Body};
         }
         for (qw(Subject ReplyTo Reply-To Cc To From)) {
             if ( $Data{$_} ) {
-                $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Get($_) .
+                $Data{Body} = $Self->{LayoutObject}->{LanguageObject}->Translate($_) .
                     ": $Data{$_}\n" . $Data{Body};
             }
         }
 
         my $ForwardedMessageFrom
-            = $Self->{LayoutObject}->{LanguageObject}->Get('Forwarded message from');
+            = $Self->{LayoutObject}->{LanguageObject}->Translate('Forwarded message from');
         my $EndForwardedMessage
-            = $Self->{LayoutObject}->{LanguageObject}->Get('End forwarded message');
+            = $Self->{LayoutObject}->{LanguageObject}->Translate('End forwarded message');
 
         $Data{Body} = "\n---- $ForwardedMessageFrom $Data{From} ---\n\n" . $Data{Body};
         $Data{Body} .= "\n---- $EndForwardedMessage ---\n";
@@ -383,7 +383,8 @@ sub Form {
         for ( sort keys %AllStdAttachments ) {
             my %AttachmentsData = $Self->{StdAttachmentObject}->StdAttachmentGet( ID => $_ );
             $Self->{UploadCacheObject}->FormIDAddFile(
-                FormID => $GetParam{FormID},
+                FormID      => $GetParam{FormID},
+                Disposition => 'attachment',
                 %AttachmentsData,
             );
         }
@@ -526,6 +527,7 @@ sub Form {
     $Output .= $Self->_Mask(
         TicketNumber => $Ticket{TicketNumber},
         TicketID     => $Self->{TicketID},
+        Title        => $Ticket{Title},
         QueueID      => $Ticket{QueueID},
         NextStates   => $Self->_GetNextStates(
             %GetParam,
@@ -645,9 +647,13 @@ sub SendEmail {
     }
 
     # prepare subject
-    my $TicketNumber = $Self->{TicketObject}->TicketNumberLookup( TicketID => $Self->{TicketID} );
+    my %Ticket = $Self->{TicketObject}->TicketGet(
+        TicketID      => $Self->{TicketID},
+        DynamicFields => 1,
+    );
+
     $GetParam{Subject} = $Self->{TicketObject}->TicketSubjectBuild(
-        TicketNumber => $TicketNumber,
+        TicketNumber => $Ticket{TicketNumber},
         Action       => 'Forward',
         Subject      => $GetParam{Subject} || '',
     );
@@ -833,7 +839,8 @@ sub SendEmail {
             Param => 'FileUpload',
         );
         $Self->{UploadCacheObject}->FormIDAddFile(
-            FormID => $GetParam{FormID},
+            FormID      => $GetParam{FormID},
+            Disposition => 'attachment',
             %UploadStuff,
         );
     }
@@ -848,12 +855,12 @@ sub SendEmail {
 
         my $QueueID = $Self->{TicketObject}->TicketQueueID( TicketID => $Self->{TicketID} );
         my $Output = $Self->{LayoutObject}->Header(
-            Value     => $TicketNumber,
             Type      => 'Small',
             BodyClass => 'Popup',
         );
         $Output .= $Self->_Mask(
-            TicketNumber => $TicketNumber,
+            TicketNumber => $Ticket{TicketNumber},
+            Title        => $Ticket{Title},
             TicketID     => $Self->{TicketID},
             QueueID      => $QueueID,
             NextStates   => $Self->_GetNextStates(
@@ -901,7 +908,12 @@ sub SendEmail {
         ATTACHMENT:
         for my $Attachment (@AttachmentData) {
             my $ContentID = $Attachment->{ContentID};
-            if ( $ContentID && ( $Attachment->{ContentType} =~ /image/i ) ) {
+            if (
+                $ContentID
+                && ( $Attachment->{ContentType} =~ /image/i )
+                && ( $Attachment->{Disposition} eq 'inline' )
+                )
+            {
                 my $ContentIDHTMLQuote = $Self->{LayoutObject}->Ascii2Html(
                     Text => $ContentID,
                 );
@@ -1506,11 +1518,11 @@ sub _Mask {
             $Attachment->{ContentID}
             && $Self->{LayoutObject}->{BrowserRichText}
             && ( $Attachment->{ContentType} =~ /image/i )
+            && ( $Attachment->{Disposition} eq 'inline' )
             )
         {
             next ATTACHMENT;
         }
-
         $Self->{LayoutObject}->Block(
             Name => 'Attachment',
             Data => $Attachment,
@@ -1611,7 +1623,7 @@ sub _GetExtendedParams {
                 }
 
                 my $CustomerDisabled = '';
-                my $CountAux         = $CustomerCounter;
+                my $CountAux         = $CustomerCounter++;
                 if ( $CustomerError ne '' ) {
                     $CustomerDisabled = 'disabled="disabled"';
                     $CountAux         = $Count . 'Error';
@@ -1678,7 +1690,7 @@ sub _GetExtendedParams {
                 }
 
                 my $CustomerDisabledCc = '';
-                my $CountAuxCc         = $CustomerCounterCc;
+                my $CountAuxCc         = $CustomerCounterCc++;
                 if ( $CustomerErrorCc ne '' ) {
                     $CustomerDisabledCc = 'disabled="disabled"';
                     $CountAuxCc         = $Count . 'Error';
@@ -1745,7 +1757,7 @@ sub _GetExtendedParams {
                 }
 
                 my $CustomerDisabledBcc = '';
-                my $CountAuxBcc         = $CustomerCounterBcc;
+                my $CountAuxBcc         = $CustomerCounterBcc++;
                 if ( $CustomerErrorBcc ne '' ) {
                     $CustomerDisabledBcc = 'disabled="disabled"';
                     $CountAuxBcc         = $Count . 'Error';

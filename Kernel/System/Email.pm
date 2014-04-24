@@ -35,47 +35,11 @@ Global module to send email via sendmail or SMTP.
 
 =item new()
 
-create an object
+create an object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::Time;
-    use Kernel::System::DB;
-    use Kernel::System::Email;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $TimeObject = Kernel::System::Time->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $SendObject = Kernel::System::Email->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        DBObject     => $DBObject,
-        MainObject   => $MainObject,
-        TimeObject   => $TimeObject,
-        EncodeObject => $EncodeObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $SendObject = $Kernel::OM->Get('EmailObject');
 
 =cut
 
@@ -401,7 +365,15 @@ sub Send {
                         && $Upload->{Content} eq $Param{HTMLBody};
 
                     # skip, but remember all attachments except inline images
-                    if ( !defined $Upload->{ContentID} ) {
+                    if (
+                        ( !defined $Upload->{ContentID} )
+                        || ( !defined $Upload->{ContentType} || $Upload->{ContentType} !~ /image/i )
+                        || (
+                            !defined $Upload->{Disposition}
+                            || $Upload->{Disposition} ne 'inline'
+                        )
+                        )
+                    {
                         push @NewAttachments, \%{$Upload};
                         next ATTACHMENT;
                     }
@@ -549,7 +521,7 @@ sub Send {
             # remove empty line after multi-part preable as it will be removed later by MIME::Parser
             #    otherwise signed content will be different than the actual mail and verify will
             #    fail
-            $T =~ s{(This is a multi-part message in MIME format...\r\n)\r\n}{$1};
+            $T =~ s{(This is a multi-part message in MIME format...\r\n)\r\n}{$1}g;
 
             my $Sign = $CryptObject->Sign(
                 Message  => $T,

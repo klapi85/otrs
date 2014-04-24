@@ -30,40 +30,22 @@ use lib dirname($RealBin) . '/Custom';
 
 use Getopt::Long;
 
-use Kernel::Config;
-use Kernel::System::Encode;
-use Kernel::System::Time;
-use Kernel::System::Main;
-use Kernel::System::DB;
-use Kernel::System::Log;
-use Kernel::System::Email;
-use Kernel::System::CheckItem;
-use Kernel::System::Stats;
-use Kernel::System::Group;
-use Kernel::System::User;
-use Kernel::System::CSV;
-use Kernel::System::PDF;
-use Kernel::Language;
+use Kernel::System::ObjectManager;
 
 # create common objects
-my %CommonObject = ();
-$CommonObject{UserID}       = 1;
-$CommonObject{ConfigObject} = Kernel::Config->new();
-$CommonObject{EncodeObject} = Kernel::System::Encode->new(%CommonObject);
-$CommonObject{LogObject}    = Kernel::System::Log->new(
-    LogPrefix => 'OTRS-otrs.GenerateStats.pl',
-    %CommonObject,
+local $Kernel::OM = Kernel::System::ObjectManager->new(
+    LogObject => {
+        LogPrefix => 'OTRS-otrs.GenerateStats.pl',
+    },
+    StatsObject => {
+        UserID => 1,
+    },
 );
-$CommonObject{CSVObject}       = Kernel::System::CSV->new(%CommonObject);
-$CommonObject{TimeObject}      = Kernel::System::Time->new(%CommonObject);
-$CommonObject{MainObject}      = Kernel::System::Main->new(%CommonObject);
-$CommonObject{DBObject}        = Kernel::System::DB->new(%CommonObject);
-$CommonObject{GroupObject}     = Kernel::System::Group->new(%CommonObject);
-$CommonObject{UserObject}      = Kernel::System::User->new(%CommonObject);
-$CommonObject{StatsObject}     = Kernel::System::Stats->new(%CommonObject);
-$CommonObject{CheckItemObject} = Kernel::System::CheckItem->new(%CommonObject);
-$CommonObject{EmailObject}     = Kernel::System::Email->new(%CommonObject);
-$CommonObject{PDFObject}       = Kernel::System::PDF->new(%CommonObject);
+my %CommonObject = $Kernel::OM->ObjectHash(
+    Objects => [
+        qw(ConfigObject EncodeObject LogObject CSVObject TimeObject MainObject DBObject GroupObject UserObject StatsObject CheckItemObject EmailObject PDFObject)
+    ],
+);
 
 # get options
 Getopt::Long::Configure('no_ignore_case');
@@ -129,13 +111,6 @@ my $Lang = $CommonObject{ConfigObject}->Get('DefaultLanguage') || 'en';
 if ( $Opts{l} ) {
     $Lang = $Opts{l};
 }
-$CommonObject{LanguageObject} = Kernel::Language->new(
-    UserLanguage => $Lang,
-    LogObject    => $CommonObject{LogObject},
-    ConfigObject => $CommonObject{ConfigObject},
-    EncodeObject => $CommonObject{EncodeObject},
-    MainObject   => $CommonObject{MainObject},
-);
 
 # format
 my $Format = ( defined $Opts{f} && $Opts{f} eq 'Print' ) ? 'Print' : 'CSV';
@@ -231,8 +206,8 @@ if ( $Format eq 'Print' && $CommonObject{PDFObject} ) {
     my %User =
         $CommonObject{UserObject}->GetUserData( UserID => $CommonObject{UserID} );
 
-    my $PrintedBy  = $CommonObject{LanguageObject}->Get('printed by');
-    my $Page       = $CommonObject{LanguageObject}->Get('Page');
+    my $PrintedBy  = $CommonObject{LanguageObject}->Translate('printed by');
+    my $Page       = $CommonObject{LanguageObject}->Translate('Page');
     my $SystemTime = $CommonObject{TimeObject}->SystemTime();
     my $TimeStamp =
         $CommonObject{TimeObject}->SystemTime2TimeStamp(
@@ -265,7 +240,7 @@ if ( $Format eq 'Print' && $CommonObject{PDFObject} ) {
     }
     if ( !$CellData->[0]->[0] ) {
         $CellData->[0]->[0]->{Content} =
-            $CommonObject{LanguageObject}->Get('No Result!');
+            $CommonObject{LanguageObject}->Translate('No Result!');
     }
 
     # page params
@@ -430,7 +405,7 @@ for my $Recipient ( @{ $Opts{r} } ) {
         From       => $Opts{s},
         To         => $Recipient,
         Subject    => "[Stats - $CountStatArray Records] $Title; Created: $Time",
-        Body       => $CommonObject{LanguageObject}->Get( $Opts{m} ),
+        Body       => $CommonObject{LanguageObject}->Translate( $Opts{m} ),
         Charset    => 'utf-8',
         Attachment => [ {%Attachment}, ],
     );

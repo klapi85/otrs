@@ -31,23 +31,14 @@ Kernel::System::UnitTest::Helper - unit test helper functions
 
 construct a helper object.
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::UnitTest::Helper;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        UnitTestHelperObject => {
+            RestoreSystemConfiguration => 1,        # optional, save ZZZAuto.pm
+                                                    # and restore it in the destructor
+        },
     );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $Helper = Kernel::System::UnitTest::Helper->new(
-        %{$Self},
-        RestoreSystemConfiguration => 1,        # optional, save ZZZAuto.pm and restore it in the destructor
-    );
+    my $Helper = $Kernel::OM->Get('UnitTestHelperObject');
 
 =cut
 
@@ -144,6 +135,7 @@ the login name of the new user, the password is the same.
 
     my $TestUserLogin = $Helper->TestUserCreate(
         Groups => ['admin', 'users'],           # optional, list of groups to add this user to (rw rights)
+        Language => 'de'                        # optional, defaults to 'en' if not set
     );
 
 =cut
@@ -194,6 +186,12 @@ sub TestUserCreate {
         $Self->{UnitTestObject}->True( 1, "Added test user $TestUserLogin to group $GroupName" );
     }
 
+    # set user language
+    my $UserLanguage = $Param{Language} || 'en';
+    $Self->{UserObject}
+        ->SetPreferences( UserID => $TestUserID, Key => 'UserLanguage', Value => $UserLanguage );
+    $Self->{UnitTestObject}->True( 1, "Set user UserLanguage to $UserLanguage" );
+
     return $TestUserLogin;
 }
 
@@ -203,7 +201,9 @@ creates a test customer user that can be used in tests. It will
 be set to invalid automatically during the destructor. Returns
 the login name of the new customer user, the password is the same.
 
-    my $TestUserLogin = $Helper->TestCustomerUserCreate();
+    my $TestUserLogin = $Helper->TestCustomerUserCreate(
+        Language => 'de',   # optional, defaults to 'en' if not set
+    );
 
 =cut
 
@@ -232,45 +232,13 @@ sub TestCustomerUserCreate {
 
     $Self->{UnitTestObject}->True( 1, "Created test customer user $TestUser" );
 
+    # set customer user language
+    my $UserLanguage = $Param{Language} || 'en';
+    $Self->{CustomerUserObject}
+        ->SetPreferences( UserID => $TestUser, Key => 'UserLanguage', Value => $UserLanguage );
+    $Self->{UnitTestObject}->True( 1, "Set customer user UserLanguage to $UserLanguage" );
+
     return $TestUser;
-}
-
-sub SeleniumScenariosGet {
-    my $Self = shift;
-
-    my $Scenarios = [
-        {
-            ID          => 'Firefox on localhost',
-            host        => 'localhost',
-            port        => '4444',
-            browser     => '*firefox',
-            browser_url => 'http://127.0.0.1/',
-        },
-        {
-            ID          => 'Safari on localhost',
-            host        => 'localhost',
-            port        => '4444',
-            browser     => '*safari',
-            browser_url => 'http://127.0.0.1/',
-        },
-
-        #        {
-        #            ID          => 'IE7 VM',
-        #            host        => '192.168.56.101',
-        #            port        => '4444',
-        #            browser     => '*iehta',
-        #            browser_url => 'http://192.168.56.1/',
-        #        },
-        #        {
-        #            ID          => 'IE8 VM',
-        #            host        => '192.168.56.102',
-        #            port        => '4444',
-        #            browser     => '*iehta',
-        #            browser_url => 'http://192.168.56.1/',
-        #        },
-    ];
-
-    return $Scenarios;
 }
 
 my $FixedTime;

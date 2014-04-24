@@ -24,7 +24,7 @@ Kernel::System::CustomerCompany - customer company lib
 
 =head1 SYNOPSIS
 
-All Customer Company functions. E.g. to add and update customer companies.
+All Customer functions. E.g. to add and update customer companies.
 
 =head1 PUBLIC INTERFACE
 
@@ -34,41 +34,11 @@ All Customer Company functions. E.g. to add and update customer companies.
 
 =item new()
 
-create an object
+create an object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-    use Kernel::System::CustomerCompany;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $CustomerCompanyObject = Kernel::System::CustomerCompany->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        DBObject     => $DBObject,
-        EncodeObject => $EncodeObject,
-        MainObject   => $MainObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $CustomerCompanyObject = $Kernel::OM->Get('CustomerCompanyObject');
 
 =cut
 
@@ -122,7 +92,7 @@ add a new customer company
 
     my $ID = $CustomerCompanyObject->CustomerCompanyAdd(
         CustomerID              => 'example.com',
-        CustomerCompanyName     => 'New Customer Company Inc.',
+        CustomerCompanyName     => 'New Customer Inc.',
         CustomerCompanyStreet   => '5201 Blue Lagoon Drive',
         CustomerCompanyZIP      => '33126',
         CustomerCompanyCity     => 'Miami',
@@ -181,7 +151,7 @@ get customer company attributes
 Returns:
 
     %CustomerCompany = (
-        'CustomerCompanyName'    => 'Customer Company Inc.',
+        'CustomerCompanyName'    => 'Customer Inc.',
         'CustomerID'             => 'example.com',
         'CustomerCompanyStreet'  => '5201 Blue Lagoon Drive',
         'CustomerCompanyZIP'     => '33126',
@@ -233,7 +203,7 @@ update customer company attributes
     $CustomerCompanyObject->CustomerCompanyUpdate(
         CustomerCompanyID       => 'oldexample.com', # required for CustomerCompanyID-update
         CustomerID              => 'example.com',
-        CustomerCompanyName     => 'New Customer Company Inc.',
+        CustomerCompanyName     => 'New Customer Inc.',
         CustomerCompanyStreet   => '5201 Blue Lagoon Drive',
         CustomerCompanyZIP      => '33126',
         CustomerCompanyLocation => 'Miami',
@@ -334,7 +304,7 @@ get list of customer companies.
 Returns:
 
 %List = {
-          'example.com' => 'example.com Customer Company Inc.        ',
+          'example.com' => 'example.com Customer Inc.        ',
           'acme.com'    => 'acme.com Acme, Inc.        '
         };
 

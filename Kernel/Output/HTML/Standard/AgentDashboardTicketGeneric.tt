@@ -42,7 +42,7 @@
 [% RenderBlockStart("ContentLargeTicketGenericHeaderMeta") %]
                 <th class="DashboardHeader [% Data.CSS | html %]">
 [% RenderBlockStart("ContentLargeTicketGenericHeaderMetaLink") %]
-                    <a id="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" name="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title %]" ></a>
+                    <a id="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" name="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title | html %]" ></a>
 
 [% WRAPPER JSOnDocumentComplete %]
 <script type="text/javascript">//<![CDATA[
@@ -87,7 +87,7 @@
 [% RenderBlockStart("ContentLargeTicketGenericHeaderTicketHeader") %]
 [% RenderBlockStart("ContentLargeTicketGenericHeaderTicketNumberColumn") %]
                 <th class="DashboardHeader TicketNumber [% Data.CSS | html %]" data-column="TicketNumber">
-                    <a id="TicketNumberOverviewControl[% Data.Name | html %]" name="TicketNumberOverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title %]" >[% Config("Ticket::Hook") %]</a>
+                    <a id="TicketNumberOverviewControl[% Data.Name | html %]" name="TicketNumberOverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title | html %]" >[% Config("Ticket::Hook") %]</a>
 [% WRAPPER JSOnDocumentComplete %]
 <script type="text/javascript">//<![CDATA[
     $('#TicketNumberOverviewControl[% Data.Name | html %]').unbind('click').bind('click', function (Event) {
@@ -126,8 +126,8 @@
                 <th class="DashboardHeader [% Data.HeaderColumnName | html %] [% Data.CSS | html %]" data-column="[% Data.HeaderColumnName | html %]">
 
 [% RenderBlockStart("ContentLargeTicketGenericHeaderColumnFilterLink") %]
-                    <a href="#" class="ColumnSettingsTrigger" title="[% Data.FilterTitle %]">
-                        <i class="icon-filter"></i>
+                    <a href="#" class="ColumnSettingsTrigger" title="[% Data.FilterTitle | html %]">
+                        <i class="fa fa-filter"></i>
                     </a>
                     <div class="ColumnSettingsContainer">
                         <div class="ColumnSettingsBox">
@@ -158,7 +158,7 @@ Core.Agent.Dashboard.InitUserAutocomplete( $(".UserAutoComplete") );
                         </div>
                     </div>
 
-                    <a id="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" name="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title %]" >[% Data.HeaderNameTranslated | html %]</a>
+                    <a id="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" name="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title | html %]" >[% Data.HeaderNameTranslated | html %]</a>
 [% WRAPPER JSOnDocumentComplete %]
 <script type="text/javascript">//<![CDATA[
     $('#ColumnFilter[% Data.HeaderColumnName | html %][% Data.Name | html %]').unbind('change').bind('change', function(){
@@ -244,7 +244,7 @@ Core.Agent.Dashboard.InitUserAutocomplete( $(".UserAutoComplete") );
 [% RenderBlockEnd("ContentLargeTicketGenericHeaderColumnFilterLink") %]
 
 [% RenderBlockStart("ContentLargeTicketGenericHeaderColumnLink") %]
-                    <a id="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" name="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title %]" >[% Data.HeaderNameTranslated | html %]</a>
+                    <a id="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" name="[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]" href="#" title="[% Data.Title | html %]" >[% Data.HeaderNameTranslated | html %]</a>
 [% WRAPPER JSOnDocumentComplete %]
 <script type="text/javascript">//<![CDATA[
     $('#[% Data.HeaderColumnName | html %]OverviewControl[% Data.Name | html %]').unbind('click').bind('click', function (Event) {
@@ -292,8 +292,8 @@ Core.Agent.Dashboard.InitUserAutocomplete( $(".UserAutoComplete") );
 [% RenderBlockEnd("ContentLargeTicketGenericHeaderColumnLink") %]
 
 [% RenderBlockStart("ContentLargeTicketGenericHeaderColumnFilter") %]
-                    <a href="#" class="ColumnSettingsTrigger" title="[% Data.FilterTitle %]">
-                        <i class="icon-filter"></i>
+                    <a href="#" class="ColumnSettingsTrigger" title="[% Data.FilterTitle | html %]">
+                        <i class="fa fa-filter"></i>
                     </a>
                     <div class="ColumnSettingsContainer">
                         <div class="ColumnSettingsBox">
@@ -354,11 +354,11 @@ Core.Agent.Dashboard.InitCustomerUserAutocomplete( $(".CustomerUserAutoComplete"
     });
 //]]></script>
 [% END %]
-                    <span class="Gray" title="[% Data.Title %]" >[% Data.HeaderNameTranslated | html %]</span>
+                    <span class="Gray" title="[% Data.Title | html %]" >[% Data.HeaderNameTranslated | html %]</span>
 [% RenderBlockEnd("ContentLargeTicketGenericHeaderColumnFilter") %]
 
 [% RenderBlockStart("ContentLargeTicketGenericHeaderColumnEmpty") %]
-                    <span class="Gray" title="[% Data.Title %]" >[% Data.HeaderNameTranslated %]</span>
+                    <span class="Gray" title="[% Data.Title | html %]" >[% Data.HeaderNameTranslated %]</span>
 [% RenderBlockEnd("ContentLargeTicketGenericHeaderColumnEmpty") %]
                 </th>
 [% RenderBlockEnd("ContentLargeTicketGenericHeaderColumn") %]
@@ -471,8 +471,8 @@ $('.DashboardHeader').off('click').on('click', '.ColumnSettingsTrigger', functio
 [% RenderBlockStart("ContentLargeTicketGenericRowMetaImage") %]
                     <div class="[% Data.Class | html %] Small" title="[% Translate(Data.Title) | html %]">
                         <span class="[% Data.ClassSpan | html %]">
-                            <i class="icon-star"></i>
-                            <i class="icon-star"></i>
+                            <i class="fa fa-star"></i>
+                            <i class="fa fa-star"></i>
                             <em>[% Translate(Data.Title) | html %]</em>
                         </span>
                     </div>
@@ -511,7 +511,7 @@ $('.DashboardHeader').off('click').on('click', '.ColumnSettingsTrigger', functio
 [% RenderBlockEnd("ContentLargeTicketGenericColumnTranslatable") %]
 [% RenderBlockStart("ContentLargeTicketGenericColumnTime") %]
                 <td>
-                    <div title="[% Data.GenericValue | Localize("TimeShort") %]">[% Data.GenericValue | Localize("TimeShort") %]</div>
+                    <div title="[% Data.GenericValue | Localize("TimeShort") | html %]">[% Data.GenericValue | Localize("TimeShort") %]</div>
                 </td>
 [% RenderBlockEnd("ContentLargeTicketGenericColumnTime") %]
 [% RenderBlockStart("ContentLargeTicketGenericColumnEscalation") %]
@@ -596,7 +596,7 @@ if (Core.Config.Get('RefreshSeconds_[% Data.NameHTML | html %]')) {
 if (!$('#Dashboard[% Data.Name | html %]-box').find('.ActionMenu').find('.RemoveFilters').length) {
     $('#Dashboard[% Data.Name | html %]-box')
         .find('.ActionMenu')
-        .prepend('<div class="WidgetAction RemoveFilters"><a href="#" id="Dashboard[% Data.Name | html %]-remove-filters" title="[% Translate("Remove active filters for this widget.") | html %]"><i class="icon-trash"></i></a></div>')
+        .prepend('<div class="WidgetAction RemoveFilters"><a href="#" id="Dashboard[% Data.Name | html %]-remove-filters" title="[% Translate("Remove active filters for this widget.") | html %]"><i class="fa fa-trash-o"></i></a></div>')
         .find('.RemoveFilters')
         .on('click', function() {
 

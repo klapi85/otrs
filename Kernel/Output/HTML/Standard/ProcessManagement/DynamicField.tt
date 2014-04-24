@@ -9,6 +9,12 @@
 
 [% RenderBlockStart("rw:DynamicField") %]
 <div class="Row Row_DynamicField_[% Data.Name %]">
+[% RenderBlockStart("rw:DynamicField:DescriptionLong") %]
+    <span class="FieldHelpContainer">
+        <i class="fa fa-question-circle FieldHelpTrigger"></i>
+        <span>[% Data.DescriptionLong | html %]</span>
+    </span>
+[% RenderBlockEnd("rw:DynamicField:DescriptionLong") %]
     [% Data.Label %]
     <div class="Field">
         [% Data.Content %]

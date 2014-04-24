@@ -25,6 +25,7 @@ use Kernel::System::ProcessManagement::TransitionAction;
 use Kernel::System::SystemAddress;
 
 use Kernel::System::VariableCheck qw(:all);
+use POSIX qw/ceil/;
 
 sub new {
     my ( $Type, %Param ) = @_;
@@ -139,9 +140,8 @@ sub Run {
 
     # error screen, don't show ticket
     if ( !$Access ) {
-        my $TranslatableMessage = $Self->{LayoutObject}->{LanguageObject}->Get(
-            "We are sorry, you do not have permissions anymore to access this ticket in its"
-                . " current state. "
+        my $TranslatableMessage = $Self->{LayoutObject}->{LanguageObject}->Translate(
+            "We are sorry, you do not have permissions anymore to access this ticket in its current state. "
         );
 
         return $Self->{LayoutObject}->NoPermission(
@@ -483,16 +483,54 @@ sub MaskAgentZoom {
 
     # generate shown articles
 
+    my $Page = $Self->{ParamObject}->GetParam( Param => 'ArticlePage' ) || 1;
+    my $Limit = $Self->{ConfigObject}->Get('Ticket::Frontend::MaxArticlesPerPage');
+
+    # We need to find out whether pagination is actually necessary.
+    # The easiest way would be count the articles, but that would slow
+    # down the most common case (fewer articles than $Limit in the ticket).
+    # So instead we use the following trick:
+    # 1) if the $Page > 1, we need pagination
+    # 2) if not, request $Limit + 1 articles. If $Limit + 1 are actually
+    #    returned, pagination is necessary
+    my $Extra = $Page > 1 ? 0 : 1;
+    my $NeedPagination;
+    my $ArticleCount;
+
     # get content
     my @ArticleBox = $Self->{TicketObject}->ArticleContentIndex(
         TicketID                   => $Self->{TicketID},
         StripPlainBodyAsAttachment => $Self->{StripPlainBodyAsAttachment},
         UserID                     => $Self->{UserID},
+        Page                       => $Page,
+        Limit                      => $Limit + $Extra,
         DynamicFields => 0,    # fetch later only for the article(s) to display
     );
+    if ( $Page == 1 && @ArticleBox > $Limit ) {
+        pop @ArticleBox;
+        $NeedPagination = 1;
+        $ArticleCount   = $Self->{TicketObject}->ArticleCount(
+            TicketID => $Self->{TicketID},
+        );
+    }
+    elsif ( $Page == 1 ) {
+        $ArticleCount   = @ArticleBox;
+        $NeedPagination = 0;
+    }
+    else {
+        $NeedPagination = 1;
+        $ArticleCount   = $Self->{TicketObject}->ArticleCount(
+            TicketID => $Ticket{TicketID},
+        );
+    }
+
+    my $Pages;
+    if ($NeedPagination) {
+        $Pages = ceil( $ArticleCount / $Limit );
+    }
 
     # add counter
-    my $Count = 0;
+    my $Count = ( $Page - 1 ) * $Limit;
     for my $Article (@ArticleBox) {
         $Count++;
         $Article->{Count} = $Count;
@@ -604,7 +642,8 @@ sub MaskAgentZoom {
 
     # check if expand view is usable (only for less then 400 article)
     # if you have more articles is going to be slow and not usable
-    my $ArticleMaxLimit = 400;
+    my $ArticleMaxLimit = $Self->{ConfigObject}->Get('Ticket::Frontend::MaxArticlesZoomExpand')
+        // 400;
     if ( $Self->{ZoomExpand} && $#ArticleBox > $ArticleMaxLimit ) {
         $Self->{ZoomExpand} = 0;
     }
@@ -647,6 +686,16 @@ sub MaskAgentZoom {
     # only show article tree if articles are present
     if (@ArticleBox) {
 
+        my $Pagination;
+
+        if ($NeedPagination) {
+            $Pagination = {
+                Pages       => $Pages,
+                CurrentPage => $Page,
+                TicketID    => $Ticket{TicketID},
+            };
+        }
+
         # show article tree
         $Param{ArticleTree} = $Self->_ArticleTree(
             Ticket          => \%Ticket,
@@ -654,6 +703,9 @@ sub MaskAgentZoom {
             ArticleID       => $ArticleID,
             ArticleMaxLimit => $ArticleMaxLimit,
             ArticleBox      => \@ArticleBox,
+            Pagination      => $Pagination,
+            Page            => $Page,
+            ArticleCount    => scalar @ArticleBox,
         );
     }
 
@@ -746,7 +798,7 @@ sub MaskAgentZoom {
     # get MoveQueuesStrg
     if ( $Self->{ConfigObject}->Get('Ticket::Frontend::MoveType') =~ /^form$/i ) {
         $MoveQueues{0}
-            = '- ' . $Self->{LayoutObject}->{LanguageObject}->Get('Move') . ' -';
+            = '- ' . $Self->{LayoutObject}->{LanguageObject}->Translate('Move') . ' -';
         $Param{MoveQueuesStrg} = $Self->{LayoutObject}->AgentQueueListOption(
             Name           => 'DestQueueID',
             Data           => \%MoveQueues,
@@ -1135,7 +1187,8 @@ sub MaskAgentZoom {
         next DYNAMICFIELD if $Ticket{ 'DynamicField_' . $DynamicFieldConfig->{Name} } eq '';
 
         # use translation here to be able to reduce the character length in the template
-        my $Label = $Self->{LayoutObject}->{LanguageObject}->Get( $DynamicFieldConfig->{Label} );
+        my $Label
+            = $Self->{LayoutObject}->{LanguageObject}->Translate( $DynamicFieldConfig->{Label} );
 
         if (
             $IsProcessTicket &&
@@ -1298,7 +1351,8 @@ sub MaskAgentZoom {
             $Self->{LayoutObject}->Block(
                 Name => 'ProcessWidgetDynamicFieldGroupSeparator',
                 Data => {
-                    Name => $Self->{LayoutObject}->{LanguageObject}->Get('Fields with no group'),
+                    Name =>
+                        $Self->{LayoutObject}->{LanguageObject}->Translate('Fields with no group'),
                 },
             );
         }
@@ -1542,7 +1596,15 @@ sub _ArticleTree {
         },
     );
 
-    # check if expand/collapse view is usable (only for less then 300 articles)
+    if ( $Param{Pagination} ) {
+        $Self->{LayoutObject}->Block(
+            Name => 'ArticlePages',
+            Data => $Param{Pagination},
+        );
+    }
+
+    # check if expand/collapse view is usable (not available for too many
+    # articles)
     if ( $#ArticleBox < $ArticleMaxLimit ) {
         if ( $Self->{ZoomExpand} ) {
             $Self->{LayoutObject}->Block(
@@ -1552,6 +1614,7 @@ sub _ArticleTree {
                     ArticleID      => $ArticleID,
                     ZoomExpand     => $Self->{ZoomExpand},
                     ZoomExpandSort => $Self->{ZoomExpandSort},
+                    Page           => $Param{Page},
                 },
             );
         }
@@ -1563,6 +1626,7 @@ sub _ArticleTree {
                     ArticleID      => $ArticleID,
                     ZoomExpand     => $Self->{ZoomExpand},
                     ZoomExpandSort => $Self->{ZoomExpandSort},
+                    Page           => $Param{Page},
                 },
             );
         }
@@ -1941,7 +2005,7 @@ sub _ArticleItem {
 
                 # get StandardResponsesStrg
                 $Param{StandardResponses}->{0}
-                    = '- ' . $Self->{LayoutObject}->{LanguageObject}->Get('Reply') . ' -';
+                    = '- ' . $Self->{LayoutObject}->{LanguageObject}->Translate('Reply') . ' -';
 
                 # build html string
                 my $StandardResponsesStrg = $Self->{LayoutObject}->BuildSelection(
@@ -2000,7 +2064,8 @@ sub _ArticleItem {
                 }
                 if ( $RecipientCount > 1 ) {
                     $Param{StandardResponses}->{0}
-                        = '- ' . $Self->{LayoutObject}->{LanguageObject}->Get('Reply All') . ' -';
+                        = '- '
+                        . $Self->{LayoutObject}->{LanguageObject}->Translate('Reply All') . ' -';
 
                     $StandardResponsesStrg = $Self->{LayoutObject}->BuildSelection(
                         Name => 'ResponseID',
@@ -2070,7 +2135,8 @@ sub _ArticleItem {
 
                     # get StandarForwardsStrg
                     $Param{StandardForwards}->{0}
-                        = '- ' . $Self->{LayoutObject}->{LanguageObject}->Get('Forward') . ' -';
+                        = '- '
+                        . $Self->{LayoutObject}->{LanguageObject}->Translate('Forward') . ' -';
 
                     # build html string
                     my $StandarForwardsStrg = $Self->{LayoutObject}->BuildSelection(
@@ -2109,7 +2175,7 @@ sub _ArticleItem {
                             Name        => 'Forward',
                             Class       => 'AsPopup PopupType_TicketAction',
                             Link =>
-                                'Action=AgentTicketForward;TicketID=$Data{"TicketID"};ArticleID=$Data{"ArticleID"}'
+                                "Action=AgentTicketForward;TicketID=$Ticket{TicketID};ArticleID=$Article{ArticleID}"
                         },
                     );
                 }
@@ -2158,7 +2224,7 @@ sub _ArticleItem {
                         Name        => 'Bounce',
                         Class       => 'AsPopup PopupType_TicketAction',
                         Link =>
-                            'Action=AgentTicketBounce;TicketID=$Data{"TicketID"};ArticleID=$Data{"ArticleID"}'
+                            "Action=AgentTicketBounce;TicketID=$Ticket{TicketID};ArticleID=$Article{ArticleID}"
                     },
                 );
                 $Self->{LayoutObject}->Block(
@@ -2182,7 +2248,7 @@ sub _ArticleItem {
                 Description => 'Split this article',
                 Name        => 'Split',
                 Link =>
-                    'Action=AgentTicketPhone;TicketID=$Data{"TicketID"};ArticleID=$Data{"ArticleID"};LinkTicketID=$Data{"TicketID"}'
+                    "Action=AgentTicketPhone;TicketID=$Ticket{TicketID};ArticleID=$Article{ArticleID};LinkTicketID=$Ticket{TicketID}"
             },
         );
     }
@@ -2208,7 +2274,7 @@ sub _ArticleItem {
                     Name        => 'Print',
                     Class       => 'AsPopup PopupType_TicketAction',
                     Link =>
-                        'Action=AgentTicketPrint;TicketID=$Data{"TicketID"};ArticleID=$Data{"ArticleID"}'
+                        "Action=AgentTicketPrint;TicketID=$Ticket{TicketID};ArticleID=$Article{ArticleID}"
                 },
             );
         }
@@ -2230,7 +2296,7 @@ sub _ArticleItem {
         );
         if ($OK) {
             my $Link
-                = 'Action=AgentTicketPlain;TicketID=$Data{"TicketID"};ArticleID=$Data{"ArticleID"}';
+                = "Action=AgentTicketPlain;TicketID=$Ticket{TicketID};ArticleID=$Article{ArticleID}";
             $Self->{LayoutObject}->Block(
                 Name => 'ArticleMenu',
                 Data => {
@@ -2263,7 +2329,7 @@ sub _ArticleItem {
         my $ArticleIsImportant = $ArticleFlags{Important};
 
         my $Link
-            = 'Action=AgentTicketZoom;Subaction=MarkAsImportant;TicketID=$Data{"TicketID"};ArticleID=$Data{"ArticleID"}';
+            = "Action=AgentTicketZoom;Subaction=MarkAsImportant;TicketID=$Ticket{TicketID};ArticleID=$Article{ArticleID}";
         my $Description = 'Mark';
         if ($ArticleIsImportant) {
             $Description = 'Unmark';

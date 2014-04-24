@@ -15,6 +15,7 @@ use warnings;
 use List::Util qw( first );
 
 use Kernel::System::Stats;
+use Kernel::System::JSON;
 use Kernel::System::CSV;
 use Kernel::System::PDF;
 
@@ -36,7 +37,7 @@ sub new {
         )
     {
         if ( !$Param{$NeededData} ) {
-            $Param{LayoutObject}->FatalError( Message => "Got no $NeededData!" );
+            $Self->{LayoutObject}->FatalError( Message => "Got no $NeededData!" );
         }
         $Self->{$NeededData} = $Param{$NeededData};
     }
@@ -52,6 +53,7 @@ sub new {
     $Self->{UserLanguage} = $Param{UserLanguage} || $Self->{ConfigObject}->Get('DefaultLanguage');
 
     # create necessary objects
+    $Self->{JSONObject}  = Kernel::System::JSON->new( %{$Self} );
     $Self->{CSVObject}   = Kernel::System::CSV->new( %{$Self} );
     $Self->{StatsObject} = Kernel::System::Stats->new( %{$Self} );
 
@@ -88,6 +90,7 @@ sub Run {
 
         # get all Stats from the db
         my $Result = $Self->{StatsObject}->GetStatsList(
+            AccessRw  => $Self->{AccessRw},
             OrderBy   => $Param{OrderBy},
             Direction => $Param{Direction},
         );
@@ -1571,7 +1574,7 @@ sub Run {
 
                 if ( $ObjectAttribute->{ShowAsTree} && $ObjectAttribute->{IsDynamicField} ) {
                     my $TreeSelectionMessage
-                        = $Param{LayoutObject}->{LanguageObject}->Get("Show Tree Selection");
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate("Show Tree Selection");
                     $BlockData{SelectField}
                         .= ' <a href="#" title="'
                         . $TreeSelectionMessage
@@ -1675,7 +1678,7 @@ sub Run {
 
                 if ( $ObjectAttribute->{ShowAsTree} && $ObjectAttribute->{IsDynamicField} ) {
                     my $TreeSelectionMessage
-                        = $Param{LayoutObject}->{LanguageObject}->Get("Show Tree Selection");
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate("Show Tree Selection");
                     $BlockData{SelectField}
                         .= ' <a href="#" title="'
                         . $TreeSelectionMessage
@@ -1812,7 +1815,7 @@ sub Run {
 
                 if ( $ObjectAttribute->{ShowAsTree} && $ObjectAttribute->{IsDynamicField} ) {
                     my $TreeSelectionMessage
-                        = $Param{LayoutObject}->{LanguageObject}->Get("Show Tree Selection");
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate("Show Tree Selection");
                     $BlockData{SelectField}
                         .= ' <a href="#" title="'
                         . $TreeSelectionMessage
@@ -1867,12 +1870,16 @@ sub Run {
         $Self->{AccessRo} || return $Self->{LayoutObject}->NoPermission( WithHeader => 'yes' );
 
         # get params
-        for (qw(Format GraphSize StatID ExchangeAxis)) {
+        for (qw(Format GraphSize StatID ExchangeAxis Name Cached)) {
             $Param{$_} = $Self->{ParamObject}->GetParam( Param => $_ );
         }
-        for (qw(Format StatID)) {
-            if ( !$Param{$_} ) {
-                return $Self->{LayoutObject}->ErrorScreen( Message => "Run: Get no $_!" );
+        my @RequiredParams = (qw(Format StatID));
+        if ( $Param{Cached} ) {
+            push @RequiredParams, 'Name';
+        }
+        for my $Required (@RequiredParams) {
+            if ( !$Param{$Required} ) {
+                return $Self->{LayoutObject}->ErrorScreen( Message => "Run: Get no $Required!" );
             }
         }
 
@@ -2162,12 +2169,40 @@ sub Run {
         }
 
         # run stat...
-        my @StatArray = @{
-            $Self->{StatsObject}->StatsRun(
-                StatID   => $Param{StatID},
-                GetParam => \%GetParam,
-                )
-        };
+        my @StatArray;
+
+        # called from within the dashboard. will use the same mechanism and configuration like in
+        # the dashboard stats - the (cached) result will be the same as seen in the dashboard
+        if ( $Param{Cached} ) {
+
+            # get settings for specified stats by using the dashboard configuration for the agent
+            my %Preferences = $Self->{UserObject}->GetPreferences(
+                UserID => $Self->{UserID},
+            );
+            my $PrefKeyStatsConfiguration = 'UserDashboardStatsStatsConfiguration' . $Param{Name};
+            my $StatsSettings             = {};
+            if ( $Preferences{$PrefKeyStatsConfiguration} ) {
+                $StatsSettings = $Self->{JSONObject}->Decode(
+                    Data => $Preferences{$PrefKeyStatsConfiguration},
+                );
+            }
+            @StatArray = @{
+                $Self->{StatsObject}->StatsResultCacheGet(
+                    StatID       => $Param{StatID},
+                    UserGetParam => $StatsSettings,
+                );
+                }
+        }
+
+        # called normally within the stats area - generate stats now and use provided configuraton
+        else {
+            @StatArray = @{
+                $Self->{StatsObject}->StatsRun(
+                    StatID   => $Param{StatID},
+                    GetParam => \%GetParam,
+                );
+            };
+        }
 
         # exchange axis if selected
         if ( $Param{ExchangeAxis} ) {
@@ -2244,8 +2279,8 @@ sub Run {
 
             # PDF Output
             if ( $Self->{PDFObject} ) {
-                my $PrintedBy = $Self->{LayoutObject}->{LanguageObject}->Get('printed by');
-                my $Page      = $Self->{LayoutObject}->{LanguageObject}->Get('Page');
+                my $PrintedBy = $Self->{LayoutObject}->{LanguageObject}->Translate('printed by');
+                my $Page      = $Self->{LayoutObject}->{LanguageObject}->Translate('Page');
                 my $Time      = $Self->{LayoutObject}->{Time};
                 my $Url       = ' ';
                 if ( $ENV{REQUEST_URI} ) {
@@ -2287,7 +2322,7 @@ sub Run {
                 # output 'No matches found', if no content was given
                 if ( !$CellData->[0]->[0] ) {
                     $CellData->[0]->[0]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('No matches found.');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('No matches found.');
                 }
 
                 # page params
@@ -2742,12 +2777,12 @@ sub _ColumnAndRowTranslation {
     }
 
     # translate the headline
-    $Param{HeadArrayRef}->[0] = $Self->{LanguageObject}->Get( $Param{HeadArrayRef}->[0] );
+    $Param{HeadArrayRef}->[0] = $Self->{LanguageObject}->Translate( $Param{HeadArrayRef}->[0] );
 
     if ( $Translation{UseAsXvalue} && $Translation{UseAsXvalue} eq 'Time' ) {
         for my $Word ( @{ $Param{HeadArrayRef} } ) {
             if ( $Word =~ m{ ^ (\w+?) ( \s \d+ ) $ }smx ) {
-                my $TranslatedWord = $Self->{LanguageObject}->Get($1);
+                my $TranslatedWord = $Self->{LanguageObject}->Translate($1);
                 $Word =~ s{ ^ ( \w+? ) ( \s \d+ ) $ }{$TranslatedWord$2}smx;
             }
         }
@@ -2755,7 +2790,7 @@ sub _ColumnAndRowTranslation {
 
     elsif ( $Translation{UseAsXvalue} ) {
         for my $Word ( @{ $Param{HeadArrayRef} } ) {
-            $Word = $Self->{LanguageObject}->Get($Word);
+            $Word = $Self->{LanguageObject}->Translate($Word);
         }
     }
 
@@ -2810,7 +2845,7 @@ sub _ColumnAndRowTranslation {
     if ( $Translation{UseAsValueSeries} && $Translation{UseAsValueSeries} eq 'Time' ) {
         for my $Word ( @{ $Param{StatArrayRef} } ) {
             if ( $Word->[0] =~ m{ ^ (\w+?) ( \s \d+ ) $ }smx ) {
-                my $TranslatedWord = $Self->{LanguageObject}->Get($1);
+                my $TranslatedWord = $Self->{LanguageObject}->Translate($1);
                 $Word->[0] =~ s{ ^ ( \w+? ) ( \s \d+ ) $ }{$TranslatedWord$2}smx;
             }
         }
@@ -2819,7 +2854,7 @@ sub _ColumnAndRowTranslation {
 
         # translate
         for my $Word ( @{ $Param{StatArrayRef} } ) {
-            $Word->[0] = $Self->{LanguageObject}->Get( $Word->[0] );
+            $Word->[0] = $Self->{LanguageObject}->Translate( $Word->[0] );
         }
     }
 

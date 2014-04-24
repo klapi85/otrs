@@ -265,9 +265,11 @@ sub Run {
         CustomerUserID => $Self->{UserID},
     );
 
-    $ProcessList = $Self->{TicketObject}->TicketAclProcessData(
-        Processes => $ProcessList,
-    );
+    if ( IsHashRefWithData($ProcessList) ) {
+        $ProcessList = $Self->{TicketObject}->TicketAclProcessData(
+            Processes => $ProcessList,
+        );
+    }
 
     $Self->{TicketObject}->TicketAcl(
         ReturnType     => 'Ticket',
@@ -276,9 +278,11 @@ sub Run {
         CustomerUserID => $Self->{UserID},
     );
 
-    $FollowupProcessList = $Self->{TicketObject}->TicketAclProcessData(
-        Processes => $FollowupProcessList,
-    );
+    if ( IsHashRefWithData($FollowupProcessList) ) {
+        $FollowupProcessList = $Self->{TicketObject}->TicketAclProcessData(
+            Processes => $FollowupProcessList,
+        );
+    }
 
     # set AJAXDialog for proper error responses and screen display
     $Self->{AJAXDialog} = $Self->{ParamObject}->GetParam( Param => 'AJAXDialog' ) || '';
@@ -313,7 +317,8 @@ sub Run {
 
         # translate the error message (as it will be injected in the HTML)
         my $ErrorMessage
-            = $Self->{LayoutObject}->{LanguageObject}->Get("The selected process is invalid!");
+            = $Self->{LayoutObject}->{LanguageObject}
+            ->Translate("The selected process is invalid!");
 
         # return a predefined HTML sctructure as the AJAX call is expecting and HTML response
         return $Self->{LayoutObject}->Attachment(
@@ -471,6 +476,7 @@ sub _RenderAjax {
         $DynamicFieldCheckParam{ 'DynamicField_' . $DynamicField }
             = $DynamicFieldValues{$DynamicField};
     }
+    $Param{GetParam}->{DynamicField} = \%DynamicFieldCheckParam;
 
     # Get the activity dialog's Submit Param's or Config Params
     DIALOGFIELD:
@@ -505,8 +511,6 @@ sub _RenderAjax {
             my $PossibleValues = $Self->{BackendObject}->PossibleValuesGet(
                 DynamicFieldConfig => $DynamicFieldConfig,
             );
-            my %DynamicFieldCheckParam = map { $_ => $Param{GetParam}{$_} }
-                grep {m{^DynamicField_}xms} ( keys %{ $Param{GetParam} } );
 
             # convert possible values key => value to key => key for ACLs using a Hash slice
             my %AclData = %{$PossibleValues};
@@ -515,7 +519,6 @@ sub _RenderAjax {
             # set possible values filter from ACLs
             my $ACL = $Self->{TicketObject}->TicketAcl(
                 %{ $Param{GetParam} },
-                DynamicField   => \%DynamicFieldCheckParam,
                 ReturnType     => 'Ticket',
                 ReturnSubType  => 'DynamicField_' . $DynamicFieldConfig->{Name},
                 Data           => \%AclData,
@@ -1169,7 +1172,8 @@ sub _OutputActivityDialog {
         $Self->{LayoutObject}->Block(
             Name => 'Header',
             Data => {
-                Name => $Self->{LayoutObject}->{LanguageObject}->Get( $ActivityDialog->{Name} )
+                Name =>
+                    $Self->{LayoutObject}->{LanguageObject}->Translate( $ActivityDialog->{Name} )
                     || '',
                 }
         );
@@ -1242,7 +1246,7 @@ sub _OutputActivityDialog {
             Name => 'DescriptionShort',
             Data => {
                 DescriptionShort
-                    => $Self->{LayoutObject}->{LanguageObject}->Get(
+                    => $Self->{LayoutObject}->{LanguageObject}->Translate(
                     $ActivityDialog->{DescriptionShort},
                     ),
             },
@@ -1253,7 +1257,7 @@ sub _OutputActivityDialog {
             Name => 'DescriptionLong',
             Data => {
                 DescriptionLong
-                    => $Self->{LayoutObject}->{LanguageObject}->Get(
+                    => $Self->{LayoutObject}->{LanguageObject}->Translate(
                     $ActivityDialog->{DescriptionLong},
                     ),
             },
@@ -1668,9 +1672,7 @@ sub _OutputActivityDialog {
         # CustomerTicketProcess.dtl
         $Self->{LayoutObject}->Block(
             Name => 'FooterJS',
-            Data => {
-                Bindings => $Self->{LayoutObject}->{EnvRef}->{JSOnDocumentComplete},
-            },
+            Data => {},
         );
 
         $FooterCSSClass = 'Centered';
@@ -1838,9 +1840,6 @@ sub _RenderDynamicField {
         Success => 1,
         HTML => $Self->{LayoutObject}->Output( TemplateFile => 'ProcessManagement/DynamicField' ),
     };
-
-    return '';
-
 }
 
 sub _RenderTitle {
@@ -1862,7 +1861,7 @@ sub _RenderTitle {
     }
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("Title"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("Title"),
         FieldID          => 'Title',
         FormID           => $Param{FormID},
         Value            => $Param{GetParam}{Title},
@@ -1937,9 +1936,9 @@ sub _RenderArticle {
         Subject          => $Param{GetParam}{Subject},
         Body             => $Param{GetParam}{Body},
         LabelSubject     => $Param{ActivityDialogField}->{Config}->{LabelSubject}
-            || $Self->{LayoutObject}->{LanguageObject}->Get("Subject"),
+            || $Self->{LayoutObject}->{LanguageObject}->Translate("Subject"),
         LabelBody => $Param{ActivityDialogField}->{Config}->{LabelBody}
-            || $Self->{LayoutObject}->{LanguageObject}->Get("Text"),
+            || $Self->{LayoutObject}->{LanguageObject}->Translate("Text"),
     );
 
     # If field is required put in the necessary variables for
@@ -2034,9 +2033,15 @@ sub _RenderArticle {
     # show attachments
     ATTACHMENT:
     for my $Attachment (@Attachments) {
-
-        next ATTACHMENT if $Attachment->{ContentID} && $Self->{LayoutObject}->{BrowserRichText};
-
+        if (
+            $Attachment->{ContentID}
+            && $Self->{LayoutObject}->{BrowserRichText}
+            && ( $Attachment->{ContentType} =~ /image/i )
+            && ( $Attachment->{Disposition} eq 'inline' )
+            )
+        {
+            next ATTACHMENT;
+        }
         $Self->{LayoutObject}->Block(
             Name => 'Attachment',
             Data => $Attachment,
@@ -2075,8 +2080,8 @@ sub _RenderCustomer {
     my $SubmittedCustomerUserID = $Param{GetParam}{CustomerUserID};
 
     my %Data = (
-        LabelCustomerUser => $Self->{LayoutObject}->{LanguageObject}->Get("Customer user"),
-        LabelCustomerID   => $Self->{LayoutObject}->{LanguageObject}->Get("CustomerID"),
+        LabelCustomerUser => $Self->{LayoutObject}->{LanguageObject}->Translate("Customer user"),
+        LabelCustomerID   => $Self->{LayoutObject}->{LanguageObject}->Translate("CustomerID"),
         FormID            => $Param{FormID},
         MandatoryClass    => '',
         ValidateRequired  => '',
@@ -2194,7 +2199,7 @@ sub _RenderSLA {
     );
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("SLA"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("SLA"),
         FieldID          => 'SLAID',
         FormID           => $Param{FormID},
         MandatoryClass   => '',
@@ -2329,7 +2334,7 @@ sub _RenderService {
     );
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("Service"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("Service"),
         FieldID          => 'ServiceID',
         FormID           => $Param{FormID},
         MandatoryClass   => '',
@@ -2473,7 +2478,7 @@ sub _RenderPriority {
     );
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("Priority"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("Priority"),
         FieldID          => 'PriorityID',
         FormID           => $Param{FormID},
         MandatoryClass   => '',
@@ -2594,7 +2599,7 @@ sub _RenderQueue {
     );
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("To queue"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("To queue"),
         FieldID          => 'QueueID',
         FormID           => $Param{FormID},
         MandatoryClass   => '',
@@ -2721,7 +2726,7 @@ sub _RenderState {
     my $States = $Self->_GetStates( %{ $Param{Ticket} } );
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("Next ticket state"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("Next ticket state"),
         FieldID          => 'StateID',
         FormID           => $Param{FormID},
         MandatoryClass   => '',
@@ -2839,7 +2844,7 @@ sub _RenderType {
     );
 
     my %Data = (
-        Label            => $Self->{LayoutObject}->{LanguageObject}->Get("Type"),
+        Label            => $Self->{LayoutObject}->{LanguageObject}->Translate("Type"),
         FieldID          => 'TypeID',
         FormID           => $Param{FormID},
         MandatoryClass   => '',
@@ -3013,7 +3018,8 @@ sub _StoreActivityDialog {
             Param => 'FileUpload',
         );
         $Self->{UploadCacheObject}->FormIDAddFile(
-            FormID => $Self->{FormID},
+            FormID      => $Self->{FormID},
+            Disposition => 'attachment',
             %UploadStuff,
         );
     }
@@ -3454,7 +3460,12 @@ sub _StoreActivityDialog {
 
                     # skip, deleted not used inline images
                     my $ContentID = $Attachment->{ContentID};
-                    if ($ContentID) {
+                    if (
+                        $ContentID
+                        && ( $Attachment->{ContentType} =~ /image/i )
+                        && ( $Attachment->{Disposition} eq 'inline' )
+                        )
+                    {
                         my $ContentIDHTMLQuote = $Self->{LayoutObject}->Ascii2Html(
                             Text => $ContentID,
                         );
@@ -4102,8 +4113,8 @@ sub _GetStates {
         # be sent and the TicketStateList will send the parameter as State Type
         Type => undef,
 
-        Action => $Self->{Action},
-        UserID => $Self->{ConfigObject}->Get('CustomerPanelUserID'),
+        Action         => $Self->{Action},
+        CustomerUserID => $Self->{UserID},
     );
 
     return \%States;
@@ -4117,8 +4128,8 @@ sub _GetTypes {
     if ( $Param{QueueID} || $Param{TicketID} ) {
         %Type = $Self->{TicketObject}->TicketTypeList(
             %Param,
-            Action => $Self->{Action},
-            UserID => $Self->{ConfigObject}->Get('CustomerPanelUserID'),
+            Action         => $Self->{Action},
+            CustomerUserID => $Self->{UserID},
         );
     }
     return \%Type;

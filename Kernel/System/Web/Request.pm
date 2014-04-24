@@ -12,6 +12,8 @@ package Kernel::System::Web::Request;
 use strict;
 use warnings;
 
+use CGI ();
+use CGI::Carp;
 use File::Path qw();
 
 use Kernel::System::CheckItem;
@@ -32,34 +34,15 @@ All cgi param functions.
 
 =item new()
 
-create param object
+create param object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::Web::Request;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        ParamObject => {
+            WebRequest   => CGI::Fast->new(), # optional, e. g. if fast cgi is used
+        }
     );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $ParamObject = Kernel::System::Web::Request->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        EncodeObject => $EncodeObject,
-        MainObject   => $MainObject,
-        WebRequest   => CGI::Fast->new(), # optional, e. g. if fast cgi is used
-    );
+    my $ParamObject = $Kernel::OM->Get('ParamObject');
 
 If Kernel::System::Web::Request is instantiated several times, they will share the
 same CGI data (this can be helpful in filters which do not have access to the
@@ -84,12 +67,6 @@ sub new {
         $Self->{$Object} = $Param{$Object} || die "Got no $Object!";
     }
     $Self->{CheckItemObject} = Kernel::System::CheckItem->new( %{$Self} );
-
-    # Simple Common Gateway Interface Class
-    use CGI qw(:cgi);
-
-    # send errors to web server error log
-    use CGI::Carp;
 
     # max 5 MB posts
     $CGI::POST_MAX = $Self->{ConfigObject}->Get('WebMaxFileUpload') || 1024 * 1024 * 5; ## no critic
@@ -119,8 +96,10 @@ sub Error {
         return;
     }
 
-    return if !cgi_error();
-    return cgi_error() . ' - POST_MAX=' . ( $CGI::POST_MAX / 1024 ) . 'KB';    ## no critic
+    return if !$Self->{Query}->cgi_error();
+    ## no critic
+    return $Self->{Query}->cgi_error() . ' - POST_MAX=' . ( $CGI::POST_MAX / 1024 ) . 'KB';
+    ## use critic
 }
 
 =item GetParam()

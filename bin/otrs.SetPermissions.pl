@@ -127,7 +127,7 @@ if ($Secure) {
 
     # In secure mode, make files read-only by default
     File::Find::find(
-        { wanted => \&MakeReadOnly, no_chdir => 1 },
+        { wanted => \&MakeReadOnly, no_chdir => 1, follow => 1 },
         $DestDir . "/"
     );    # append / to follow symlinks
 
@@ -138,7 +138,7 @@ else {
 
     # set all files writeable for webserver user (needed for package manager)
     File::Find::find(
-        { wanted => \&MakeWritable, no_chdir => 1 },
+        { wanted => \&MakeWritable, no_chdir => 1, follow => 1 },
         $DestDir . "/"
     );    # append / to follow symlinks
 
@@ -187,14 +187,14 @@ for my $Dir (@Dirs) {
     }
 }
 File::Find::find(
-    { wanted => \&MakeWritableSetGid, no_chdir => 1 },
+    { wanted => \&MakeWritableSetGid, no_chdir => 1, follow => 1 },
     @Dirs
 );
 
 # set all bin/* as executable
 print "Setting permissions on $DestDir/bin/*\n";
 File::Find::find(
-    { wanted => \&MakeExecutable, no_chdir => 1 },
+    { wanted => \&MakeExecutable, no_chdir => 1, follow => 1 },
     "$DestDir/bin"
 );
 
@@ -205,7 +205,6 @@ my @FileListScripts = (
     glob("$DestDir/scripts/*.sh"),
     glob("$DestDir/scripts/tools/*.pl"),
     glob("$DestDir/scripts/auto_build/*.pl"),
-    "$DestDir/scripts/otrs-scheduler-linux",
     "$DestDir/scripts/suse-rcotrs",
 );
 for my $ExecutableFile (@FileListScripts) {
@@ -227,6 +226,9 @@ for my $MailConfigFile (@MailConfigFiles) {
     if ( -e $MailConfigFile ) {
         print "Setting owner rw and group ro permissions on $MailConfigFile\n";
         MakeReadOnly($MailConfigFile);
+        if ( !$NotRoot ) {
+            SafeChown( $OtrsUserID, $AdminGroupID, $MailConfigFile );
+        }
     }
 }
 
@@ -238,15 +240,14 @@ sub MakeReadOnly {
     my $File = $File::Find::name;
     $File = $_[0] if !defined $File;
 
+    return if $File =~ m{/[.]git}smx;
+
     if ( !$NotRoot ) {
         SafeChown( $AdminUserID, $AdminGroupID, $File );
     }
-    my $Mode;
+    my $Mode = 0640;
     if ( -d $File ) {
         $Mode = 0750;
-    }
-    else {
-        $Mode = 0640;
     }
     SafeChmod( $Mode, $File );
 }
@@ -254,13 +255,13 @@ sub MakeReadOnly {
 sub MakeWritable {
     my $File = $File::Find::name;
     $File = $_[0] if !defined $File;
-    my $Mode;
+
+    return if $File =~ m{/[.]git}smx;
+
+    my $Mode = 0660;
 
     if ( -d $File ) {
         $Mode = 0770;
-    }
-    else {
-        $Mode = 0660;
     }
     if ($NotRoot) {
         $Mode |= 2;
@@ -275,13 +276,13 @@ sub MakeWritable {
 sub MakeWritableSetGid {
     my $File = $File::Find::name;
     $File = $_[0] if !defined $File;
-    my $Mode;
+
+    return if $File =~ m{/[.]git}smx;
+
+    my $Mode = 0660;
 
     if ( -d $File ) {
         $Mode = 02770;
-    }
-    else {
-        $Mode = 0660;
     }
     if ($NotRoot) {
         $Mode |= 2;
@@ -296,6 +297,9 @@ sub MakeWritableSetGid {
 sub MakeExecutable {
     my $File = $File::Find::name;
     $File = $_[0] if !defined $File;
+
+    return if $File =~ m{/[.]git}smx;
+
     my $Mode = ( lstat($File) )[2];
     if ( defined $Mode ) {
         $Mode |= 0110;

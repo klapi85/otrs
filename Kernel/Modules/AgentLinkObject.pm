@@ -203,7 +203,7 @@ sub Run {
             }
         }
 
-        # output link block
+        # output link delete block
         $Self->{LayoutObject}->Block(
             Name => 'Delete',
             Data => {
@@ -211,6 +211,16 @@ sub Run {
                 SourceObjectNormal => $SourceObjectDescription{Normal},
             },
         );
+
+        # output special block for temporary links
+        # to close the popup without reloading the parent window
+        if ( $Form{Mode} eq 'Temporary' ) {
+
+            $Self->{LayoutObject}->Block(
+                Name => 'LinkDeleteTemporaryLink',
+                Data => {},
+            );
+        }
 
         # get already linked objects
         my $LinkListWithData = $Self->{LinkObject}->LinkListWithData(
@@ -342,7 +352,7 @@ sub Run {
                         }
 
                         # translate the type name
-                        $TypeName = $Self->{LayoutObject}->{LanguageObject}->Get($TypeName);
+                        $TypeName = $Self->{LayoutObject}->{LanguageObject}->Translate($TypeName);
 
                         # output an error notification
                         $Output .= $Self->{LayoutObject}->Notify(
@@ -458,7 +468,7 @@ sub Run {
         if ( $Form{Mode} eq 'Temporary' ) {
 
             $Self->{LayoutObject}->Block(
-                Name => 'TemporaryLink',
+                Name => 'LinkAddTemporaryLink',
                 Data => {},
             );
         }

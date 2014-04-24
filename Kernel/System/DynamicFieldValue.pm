@@ -86,7 +86,7 @@ sub new {
 
     # create additional objects
     $Self->{TimeObject}  = Kernel::System::Time->new( %{$Self} );
-    $Self->{CacheObject} = Kernel::System::Cache->new( %{$Self} );
+    $Self->{CacheObject} = $Kernel::OM->Get('CacheObject');
 
     # get the cache TTL (in seconds)
     $Self->{CacheTTL}
@@ -419,7 +419,7 @@ sub ValueValidate {
             String => $Value{ValueDateTime},
         );
 
-        return if !$SystemTime;
+        return if !defined $SystemTime;
 
         # convert back to time stamp to check errors
         my $TimeStamp = $Self->{TimeObject}->SystemTime2TimeStamp(
@@ -486,7 +486,8 @@ sub HistoricalValueGet {
     }
 
     # check cache
-    my $CacheKey = 'HistoricalValueGet::FieldID::' . $Param{FieldID} . '::ValueType::' . $ValueType;
+    my $CacheKey = join '::', 'HistoricalValueGet::FieldID', $Param{FieldID}, 'ValueType',
+        $ValueType;
 
     my $Cache = $Self->{CacheObject}->Get(
         Type => 'DynamicFieldValue',

@@ -34,41 +34,11 @@ DynamicFields backend
 
 =item new()
 
-create a DynamicField object
+create a DynamicField object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-    use Kernel::System::DynamicField;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $DynamicFieldObject = Kernel::System::DynamicField->new(
-        ConfigObject        => $ConfigObject,
-        EncodeObject        => $EncodeObject,
-        LogObject           => $LogObject,
-        MainObject          => $MainObject,
-        DBObject            => $DBObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $DynamicFieldObject = $Kernel::OM->Get('DynamicFieldObject');
 
 =cut
 
@@ -87,7 +57,7 @@ sub new {
     }
 
     # create additional objects
-    $Self->{CacheObject} = Kernel::System::Cache->new( %{$Self} );
+    $Self->{CacheObject} = $Kernel::OM->Get('CacheObject');
     $Self->{ValidObject} = Kernel::System::Valid->new( %{$Self} );
     $Self->{YAMLObject}  = Kernel::System::YAML->new( %{$Self} );
 
@@ -143,7 +113,7 @@ sub DynamicFieldAdd {
     }
 
     # check needed structure for some fields
-    if ( $Param{Name} !~ m{ \A [a-z|A-Z|\d]+ \z }xms ) {
+    if ( $Param{Name} !~ m{ \A [a-zA-Z\d]+ \z }xms ) {
         $Self->{LogObject}->Log(
             Priority => 'error',
             Message  => "Not valid letters on Name:$Param{Name}!"
@@ -378,7 +348,7 @@ sub DynamicFieldUpdate {
     utf8::upgrade($Config);
 
     # check needed structure for some fields
-    if ( $Param{Name} !~ m{ \A [a-z|A-Z|\d]+ \z }xms ) {
+    if ( $Param{Name} !~ m{ \A [a-zA-Z\d]+ \z }xms ) {
         $Self->{LogObject}->Log(
             Priority => 'error',
             Message  => "Not valid letters on Name:$Param{Name} or ObjectType:$Param{ObjectType}!",

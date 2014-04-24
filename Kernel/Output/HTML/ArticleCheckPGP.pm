@@ -12,6 +12,8 @@ package Kernel::Output::HTML::ArticleCheckPGP;
 use strict;
 use warnings;
 
+use MIME::Parser;
+
 use Kernel::System::Crypt;
 use Kernel::System::EmailParser;
 
@@ -122,11 +124,11 @@ sub Check {
 
                         # remember decrypted attachement, to add it later
                         push @Attachments, {
-                            Content     => $AttachmentContent,
-                            ContentType => $Attachment{ContentType},
-                            Filename    => $AttachmentFilename,
-                            ArticleID   => $Self->{ArticleID},
-                            UserID      => $Self->{UserID},
+                            %Attachment,
+                            Content   => $AttachmentContent,
+                            Filename  => $AttachmentFilename,
+                            ArticleID => $Self->{ArticleID},
+                            UserID    => $Self->{UserID},
                         };
                     }
 
@@ -219,7 +221,6 @@ sub Check {
             ArticleID => $Self->{ArticleID},
             UserID    => $Self->{UserID},
         );
-        use MIME::Parser;
         my $Parser = MIME::Parser->new();
         $Parser->decode_headers(0);
         $Parser->extract_nested_messages(0);
@@ -251,11 +252,11 @@ sub Check {
                 );
             }
 
-            # decrypt
-            my $Cryped = $Entity->parts(1)->as_string();
+            # get crypted part of the mail
+            my $Crypted = $Entity->parts(1)->as_string();
 
-            # Encrypt it
-            my %Decrypt = $Self->{CryptObject}->Decrypt( Message => $Cryped, );
+            # decrypt it
+            my %Decrypt = $Self->{CryptObject}->Decrypt( Message => $Crypted, );
             if ( $Decrypt{Successful} ) {
                 $Entity = $Parser->parse_data( $Decrypt{Data} );
                 my $Head = $Entity->head();
@@ -266,8 +267,6 @@ sub Check {
                 # use a copy of the Entity to get the body, otherwise the original mail content
                 # could be altered and a signature verify could fail. See Bug#9954
                 my $EntityCopy = $Entity->dup();
-
-                use Kernel::System::EmailParser;
 
                 my $ParserObject = Kernel::System::EmailParser->new(
                     %{$Self},
@@ -296,11 +295,9 @@ sub Check {
                     # write attachments to the storage
                     for my $Attachment ( $ParserObject->GetAttachments() ) {
                         $Self->{TicketObject}->ArticleWriteAttachment(
-                            Content     => $Attachment->{Content},
-                            Filename    => $Attachment->{Filename},
-                            ContentType => $Attachment->{ContentType},
-                            ArticleID   => $Self->{ArticleID},
-                            UserID      => $Self->{UserID},
+                            %{$Attachment},
+                            ArticleID => $Self->{ArticleID},
+                            UserID    => $Self->{UserID},
                         );
                     }
                 }

@@ -73,6 +73,30 @@ sub ValueValidate {
         UserID => $Param{UserID}
     );
 
+    if (
+        IsArrayRefWithData( $Param{DynamicFieldConfig}->{Config}->{RegExList} )
+        && IsStringWithData( $Param{Value} )
+        )
+    {
+        # check regular expressions
+        my @RegExList = @{ $Param{DynamicFieldConfig}->{Config}->{RegExList} };
+
+        REGEXENTRY:
+        for my $RegEx (@RegExList) {
+
+            if ( $Param{Value} !~ $RegEx->{Value} ) {
+                $Self->{LogObject}->Log(
+                    Priority => 'error',
+                    Message  => "The value '$Param{Value}' is not matching /"
+                        . $RegEx->{Value} . "/ ("
+                        . $RegEx->{ErrorMessage} . ")!",
+                );
+                $Success = undef;
+                last REGEXENTRY;
+            }
+        }
+    }
+
     return $Success;
 }
 
@@ -159,8 +183,16 @@ sub EditFieldRender {
         $FieldClass .= ' ServerError';
     }
 
+    my $ValueEscaped = $Param{LayoutObject}->Ascii2Html(
+        Text => $Value,
+    );
+
+    my $FieldLabelEscaped = $Param{LayoutObject}->Ascii2Html(
+        Text => $FieldLabel,
+    );
+
     my $HTMLString = <<"EOF";
-<input type="text" class="$FieldClass" id="$FieldName" name="$FieldName" title="$FieldLabel" value="$Value" />
+<input type="text" class="$FieldClass" id="$FieldName" name="$FieldName" title="$FieldLabelEscaped" value="$ValueEscaped" />
 EOF
 
     if ( $Param{Mandatory} ) {
@@ -260,6 +292,25 @@ sub EditFieldValueValidate {
     if ( $Param{Mandatory} && $Value eq '' ) {
         $ServerError = 1;
     }
+    elsif (
+        IsArrayRefWithData( $Param{DynamicFieldConfig}->{Config}->{RegExList} )
+        && ( $Param{Mandatory} || ( !$Param{Mandatory} && $Value ne '' ) )
+        )
+    {
+
+        # check regular expressions
+        my @RegExList = @{ $Param{DynamicFieldConfig}->{Config}->{RegExList} };
+
+        REGEXENTRY:
+        for my $RegEx (@RegExList) {
+
+            if ( $Value !~ $RegEx->{Value} ) {
+                $ServerError  = 1;
+                $ErrorMessage = $RegEx->{ErrorMessage};
+                last REGEXENTRY;
+            }
+        }
+    }
 
     # create resulting structure
     my $Result = {
@@ -343,8 +394,16 @@ sub SearchFieldRender {
     # check and set class if necessary
     my $FieldClass = 'DynamicFieldText';
 
+    my $ValueEscaped = $Param{LayoutObject}->Ascii2Html(
+        Text => $Value,
+    );
+
+    my $FieldLabelEscaped = $Param{LayoutObject}->Ascii2Html(
+        Text => $FieldLabel,
+    );
+
     my $HTMLString = <<"EOF";
-<input type="text" class="$FieldClass" id="$FieldName" name="$FieldName" title="$FieldLabel" value="$Value" />
+<input type="text" class="$FieldClass" id="$FieldName" name="$FieldName" title="$FieldLabelEscaped" value="$ValueEscaped" />
 EOF
 
     my $AdditionalText;

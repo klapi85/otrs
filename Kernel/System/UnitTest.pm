@@ -16,6 +16,7 @@ use if $^O eq 'MSWin32', "Win32::Console::ANSI";
 use Term::ANSIColor;
 
 use Kernel::System::Environment;
+use Kernel::System::ObjectManager;
 
 =head1 NAME
 
@@ -34,47 +35,11 @@ functions to define test cases.
 
 =item new()
 
-create unit test object
+create unit test object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-    use Kernel::System::Time;
-    use Kernel::System::UnitTest;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $TimeObject = Kernel::System::Time->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $UnitTestObject = Kernel::System::UnitTest->new(
-        EncodeObject => $EncodeObject,
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-        DBObject     => $DBObject,
-        TimeObject   => $TimeObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $UnitTestObject = $Kernel::OM->Get('UnitTestObject');
 
 =cut
 
@@ -88,17 +53,12 @@ sub new {
     $Self->{Debug} = $Param{Debug} || 0;
 
     # check needed objects
-    for (qw(ConfigObject DBObject LogObject TimeObject MainObject EncodeObject)) {
-        if ( $Param{$_} ) {
-            $Self->{$_} = $Param{$_};
-        }
-        else {
-            die "Got no $_!";
-        }
+    for my $Needed (
+        qw(ConfigObject DBObject LogObject TimeObject MainObject EncodeObject EnvironmentObject)
+        )
+    {
+        $Self->{$Needed} = $Kernel::OM->Get($Needed);
     }
-
-    # create additional objects
-    $Self->{EnvironmentObject} = Kernel::System::Environment->new( %{$Self} );
 
     $Self->{Output} = $Param{Output} || 'ASCII';
 
@@ -186,11 +146,25 @@ sub Run {
 
             # create a new scope to be sure to destroy local object of the test files
             {
+                # Make sure every UT uses its own clean environment.
+                local $Kernel::OM = Kernel::System::ObjectManager->new(
+                    LogObject => {
+                        LogPrefix => 'OTRS-otrs.UnitTest',
+                    },
+                );
+
+                push @{ $Self->{NotOkInfo} }, [$File];
 
                 # HERE the actual tests are run!!!
                 if ( !eval ${$UnitTestFile} ) {    ## no critic
-                    $Self->True( 0, "ERROR: Syntax error in $File: $@" );
-                    print STDERR "ERROR: Syntax error in $File: $@\n";
+                    if ($@) {
+                        $Self->True( 0, "ERROR: Error in $File: $@" );
+                        print STDERR "ERROR: Error in $File: $@\n";
+                    }
+                    else {
+                        $Self->True( 0, "ERROR: $File did not return a true value." );
+                        print STDERR "ERROR: $File did not return a true value.\n";
+                    }
                 }
             }
 
@@ -553,7 +527,7 @@ they are different, undef otherwise.
 Data parameters need to be passed by reference and can be SCALAR,
 ARRAY or HASH.
 
-    my $DataIsDifferent = $SysConfigObject->_DataDiff(
+    my $DataIsDifferent = $UnitTestObject->_DataDiff(
         Data1 => \$Data1,
         Data2 => \$Data2,
     );
@@ -706,16 +680,27 @@ sub _PrintSummary {
     }
     elsif ( $Self->{Output} eq 'ASCII' ) {
         print "=====================================================================\n";
-        print " Product:   $ResultSummary{Product}\n";
-        print " Test Time: $ResultSummary{TimeTaken} s\n";
-        print " Time:      $ResultSummary{Time}\n";
-        print " Host:      $ResultSummary{Host}\n";
-        print " Perl:      $ResultSummary{Perl}\n";
-        print " OS:        $ResultSummary{OS}\n";
-        print " Vendor:    $ResultSummary{Vendor}\n";
-        print " Database:  $ResultSummary{Database}\n";
-        print " TestOk:    $ResultSummary{TestOk}\n";
-        print " TestNotOk: $ResultSummary{TestNotOk}\n";
+        print " Product:     $ResultSummary{Product}\n";
+        print " Test Time:   $ResultSummary{TimeTaken} s\n";
+        print " Time:        $ResultSummary{Time}\n";
+        print " Host:        $ResultSummary{Host}\n";
+        print " Perl:        $ResultSummary{Perl}\n";
+        print " OS:          $ResultSummary{OS}\n";
+        print " Vendor:      $ResultSummary{Vendor}\n";
+        print " Database:    $ResultSummary{Database}\n";
+        print " TestOk:      $ResultSummary{TestOk}\n";
+        print " TestNotOk:   $ResultSummary{TestNotOk}\n";
+
+        if ( $ResultSummary{TestNotOk} ) {
+            print " FailedTests:\n";
+            FAILEDFILE:
+            for my $FailedFile ( @{ $Self->{NotOkInfo} || [] } ) {
+                my ( $File, @Tests ) = @{ $FailedFile || [] };
+                next FAILEDFILE if !@Tests;
+                print sprintf "  %s #%s\n", $File, join ", ", @Tests;
+            }
+        }
+
         print "=====================================================================\n";
     }
     return 1;
@@ -801,6 +786,11 @@ sub _Print {
         }
         $Self->{XML}->{Test}->{ $Self->{XMLUnit} }->{ $Self->{TestCount} }->{Result} = 'not ok';
         $Self->{XML}->{Test}->{ $Self->{XMLUnit} }->{ $Self->{TestCount} }->{Name}   = $Name;
+
+        my $ShortName = $Name;
+        $ShortName =~ s{\(.+\)$}{};
+        push @{ $Self->{NotOkInfo}->[-1] }, sprintf "%s - %s", $Self->{TestCount}, $ShortName;
+
         return;
     }
 }

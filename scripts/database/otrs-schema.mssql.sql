@@ -620,6 +620,7 @@ CREATE TABLE article_attachment (
     content_type NVARCHAR (450) NULL,
     content_id NVARCHAR (250) NULL,
     content_alternative NVARCHAR (50) NULL,
+    disposition NVARCHAR (15) NULL,
     content NVARCHAR (MAX) NOT NULL,
     create_time DATETIME NOT NULL,
     create_by INTEGER NOT NULL,
@@ -970,6 +971,7 @@ CREATE TABLE web_upload_cache (
     content_id NVARCHAR (250) NULL,
     content_size NVARCHAR (30) NULL,
     content_type NVARCHAR (250) NULL,
+    disposition NVARCHAR (15) NULL,
     content NVARCHAR (MAX) NOT NULL,
     create_time_unix BIGINT NOT NULL
 );
@@ -1261,7 +1263,7 @@ CREATE TABLE dynamic_field_value (
     value_int BIGINT NULL,
     PRIMARY KEY(id)
 );
-CREATE INDEX dynamic_field_value_field_values ON dynamic_field_value (object_id);
+CREATE INDEX dynamic_field_value_field_values ON dynamic_field_value (object_id, field_id);
 CREATE INDEX dynamic_field_value_search_date ON dynamic_field_value (field_id, value_date);
 CREATE INDEX dynamic_field_value_search_int ON dynamic_field_value (field_id, value_int);
 -- ----------------------------------------------------------

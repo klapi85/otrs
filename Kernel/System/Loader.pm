@@ -12,10 +12,15 @@ package Kernel::System::Loader;
 use strict;
 use warnings;
 
-use Kernel::System::CacheInternal;
-
 use CSS::Minifier qw();
 use JavaScript::Minifier qw();
+
+use Kernel::System::CacheInternal;
+## nofilter(TidyAll::Plugin::OTRS::Perl::LayoutObject)
+use Kernel::Output::HTML::Layout;
+## nofilter(TidyAll::Plugin::OTRS::Perl::ParamObject)
+use Kernel::System::Web::Request;
+use Kernel::System::Time;
 
 =head1 NAME
 
@@ -35,31 +40,9 @@ All valid functions.
 
 create an object
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Loader;
-    use Kernel::System::Main;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $LoaderObject = Kernel::System::Loader->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $LoaderObject = $Kernel::OM->Get('LoaderObject');
 
 =cut
 
@@ -163,11 +146,6 @@ sub MinifyFiles {
         #   caches are correctly regenerated on changes.
         $FileString .= "$Location:$FileMTime:";
     }
-
-    # also include the config timestamp in the caching to reload the data on config changes
-    my $ConfigTimestamp = $Self->{ConfigObject}->ConfigChecksum();
-
-    $FileString .= $ConfigTimestamp;
 
     my $Filename = $TargetFilenamePrefix . $Self->{MainObject}->MD5sum(
         String => \$FileString,
@@ -409,6 +387,58 @@ sub MinifyJavaScript {
     }
 
     return JavaScript::Minifier::minify( input => $Param{Code} );
+}
+
+=item CacheGenerate()
+
+generates the loader cache files for all frontend modules.
+
+    my %GeneratedFiles = $LoaderObject->CacheGenerate();
+
+=cut
+
+sub CacheGenerate {
+    my ( $Self, %Param ) = @_;
+
+    my @Result;
+
+    my $ParamObject = Kernel::System::Web::Request->new(
+        %{$Self},
+        WebRequest => 0,
+    );
+
+    my $TimeObject = Kernel::System::Time->new( %{$Self} );
+
+    my $LayoutObject = Kernel::Output::HTML::Layout->new(
+        %{$Self},
+        TimeObject   => $TimeObject,
+        ParamObject  => $ParamObject,
+        Lang         => 'en',
+        UserTimeZone => '+0',
+    );
+
+    my %AgentFrontends = %{ $Self->{ConfigObject}->Get('Frontend::Module') // {} };
+
+    for my $FrontendModule ( sort { $a cmp $b } keys %AgentFrontends ) {
+        $LayoutObject->{Action} = $FrontendModule;
+        $LayoutObject->LoaderCreateAgentCSSCalls();
+        $LayoutObject->LoaderCreateAgentJSCalls();
+        push @Result, $FrontendModule;
+    }
+
+    my %CustomerFrontends = (
+        %{ $Self->{ConfigObject}->Get('CustomerFrontend::Module') // {} },
+        %{ $Self->{ConfigObject}->Get('PublicFrontend::Module')   // {} },
+    );
+
+    for my $FrontendModule ( sort { $a cmp $b } keys %CustomerFrontends ) {
+        $LayoutObject->{Action} = $FrontendModule;
+        $LayoutObject->LoaderCreateCustomerCSSCalls();
+        $LayoutObject->LoaderCreateCustomerJSCalls();
+        push @Result, $FrontendModule;
+    }
+
+    return @Result;
 }
 
 =item CacheDelete()

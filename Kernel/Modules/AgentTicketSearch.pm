@@ -344,17 +344,6 @@ sub Run {
             $Self->{Profile} = 'last-search';
         }
 
-        # store last queue screen
-        my $URL
-            = "Action=AgentTicketSearch;Subaction=Search;Profile=$Self->{Profile};SortBy=$Self->{SortBy}"
-            . ";OrderBy=$Self->{OrderBy};TakeLastSearch=1;StartHit=$Self->{StartHit}";
-
-        $Self->{SessionObject}->UpdateSessionID(
-            SessionID => $Self->{SessionID},
-            Key       => 'LastScreenOverview',
-            Value     => $URL,
-        );
-
         # save search profile (under last-search or real profile name)
         $Self->{SaveProfile} = 1;
 
@@ -625,7 +614,7 @@ sub Run {
                 );
 
                 for my $Key (qw(State Lock)) {
-                    $Data{$Key} = $Self->{LayoutObject}->{LanguageObject}->Get( $Data{$Key} );
+                    $Data{$Key} = $Self->{LayoutObject}->{LanguageObject}->Translate( $Data{$Key} );
                 }
 
                 $Data{Age} = $Self->{LayoutObject}->CustomerAge( Age => $Data{Age}, Space => ' ' );
@@ -721,7 +710,7 @@ sub Run {
             );
 
             my @CSVHeadTranslated
-                = map { $Self->{LayoutObject}->{LanguageObject}->Get( $HeaderMap{$_} || $_ ); }
+                = map { $Self->{LayoutObject}->{LanguageObject}->Translate( $HeaderMap{$_} || $_ ); }
                 @CSVHead;
 
             my $CSV = $Self->{CSVObject}->Array2CSV(
@@ -836,10 +825,10 @@ sub Run {
 
             # PDF Output
             if ( $Self->{PDFObject} ) {
-                my $Title = $Self->{LayoutObject}->{LanguageObject}->Get('Ticket') . ' '
-                    . $Self->{LayoutObject}->{LanguageObject}->Get('Search');
-                my $PrintedBy = $Self->{LayoutObject}->{LanguageObject}->Get('printed by');
-                my $Page      = $Self->{LayoutObject}->{LanguageObject}->Get('Page');
+                my $Title = $Self->{LayoutObject}->{LanguageObject}->Translate('Ticket') . ' '
+                    . $Self->{LayoutObject}->{LanguageObject}->Translate('Search');
+                my $PrintedBy = $Self->{LayoutObject}->{LanguageObject}->Translate('printed by');
+                my $Page      = $Self->{LayoutObject}->{LanguageObject}->Translate('Page');
                 my $Time      = $Self->{LayoutObject}->{Time};
                 my $Url       = '';
                 if ( $ENV{REQUEST_URI} ) {
@@ -864,25 +853,25 @@ sub Run {
                     $CellData->[0]->[0]->{Content} = $Self->{ConfigObject}->Get('Ticket::Hook');
                     $CellData->[0]->[0]->{Font}    = 'ProportionalBold';
                     $CellData->[0]->[1]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('Created');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Created');
                     $CellData->[0]->[1]->{Font} = 'ProportionalBold';
                     $CellData->[0]->[2]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('From');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('From');
                     $CellData->[0]->[2]->{Font} = 'ProportionalBold';
                     $CellData->[0]->[3]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('Subject');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Subject');
                     $CellData->[0]->[3]->{Font} = 'ProportionalBold';
                     $CellData->[0]->[4]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('State');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('State');
                     $CellData->[0]->[4]->{Font} = 'ProportionalBold';
                     $CellData->[0]->[5]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('Queue');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Queue');
                     $CellData->[0]->[5]->{Font} = 'ProportionalBold';
                     $CellData->[0]->[6]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('Owner');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Owner');
                     $CellData->[0]->[6]->{Font} = 'ProportionalBold';
                     $CellData->[0]->[7]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('CustomerID');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('CustomerID');
                     $CellData->[0]->[7]->{Font} = 'ProportionalBold';
 
                     # create the content array
@@ -900,7 +889,8 @@ sub Run {
                 # otherwise, show 'No ticket data found' message
                 else {
                     $CellData->[0]->[0]->{Content}
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('No ticket data found.');
+                        = $Self->{LayoutObject}->{LanguageObject}
+                        ->Translate('No ticket data found.');
                 }
 
                 # page params
@@ -1004,6 +994,17 @@ sub Run {
                     OP => "Action=AgentTicketZoom;TicketID=$ViewableTicketIDs[0]",
                 );
             }
+
+            # store last queue screen
+            my $URL
+                = "Action=AgentTicketSearch;Subaction=Search;Profile=$Self->{Profile};SortBy=$Self->{SortBy}"
+                . ";OrderBy=$Self->{OrderBy};TakeLastSearch=1;StartHit=$Self->{StartHit}";
+
+            $Self->{SessionObject}->UpdateSessionID(
+                SessionID => $Self->{SessionID},
+                Key       => 'LastScreenOverview',
+                Value     => $URL,
+            );
 
             # start html page
             my $Output = $Self->{LayoutObject}->Header();
@@ -1272,7 +1273,7 @@ sub Run {
             next DYNAMICFIELD if !IsArrayRefWithData($SearchFieldPreferences);
 
             # translate the dynamic field label
-            my $TranslatedDynamicFieldLabel = $Self->{LayoutObject}->{LanguageObject}->Get(
+            my $TranslatedDynamicFieldLabel = $Self->{LayoutObject}->{LanguageObject}->Translate(
                 $DynamicFieldConfig->{Label},
             );
 
@@ -1280,7 +1281,7 @@ sub Run {
             for my $Preference ( @{$SearchFieldPreferences} ) {
 
                 # translate the suffix
-                my $TranslatedSuffix = $Self->{LayoutObject}->{LanguageObject}->Get(
+                my $TranslatedSuffix = $Self->{LayoutObject}->{LanguageObject}->Translate(
                     $Preference->{LabelSuffix},
                 ) || '';
 
@@ -1462,31 +1463,80 @@ sub Run {
             Multiple => 0,
         );
 
-        # get user of own groups
-        my %ShownUsers = $Self->{UserObject}->UserList(
+        # get all users of own groups
+        my %AllUsers = $Self->{UserObject}->UserList(
             Type  => 'Long',
-            Valid => 1,
+            Valid => 0,
         );
         if ( !$Self->{ConfigObject}->Get('Ticket::ChangeOwnerToEveryone') ) {
             my %Involved = $Self->{GroupObject}->GroupMemberInvolvedList(
                 UserID => $Self->{UserID},
                 Type   => 'ro',
             );
-            for my $UserID ( sort keys %ShownUsers ) {
+            for my $UserID ( sort keys %AllUsers ) {
                 if ( !$Involved{$UserID} ) {
-                    delete $ShownUsers{$UserID};
+                    delete $AllUsers{$UserID};
                 }
             }
         }
+
+        my @ShownUsers;
+        my %UsersInvalid;
+
+        # get valid users of own groups
+        my %ValidUsers = $Self->{UserObject}->UserList(
+            Type  => 'Long',
+            Valid => 1,
+        );
+
+        USERID:
+        for my $UserID ( sort keys %AllUsers ) {
+
+            if ( !$ValidUsers{$UserID} ) {
+                $UsersInvalid{$UserID} = $AllUsers{$UserID};
+                next USERID;
+            }
+
+            push @ShownUsers, {
+                Key   => $UserID,
+                Value => $AllUsers{$UserID},
+            };
+        }
+
+        # also show invalid agents (if any)
+        if ( scalar %UsersInvalid ) {
+            push @ShownUsers, {
+                Key      => '-',
+                Value    => '_____________________',
+                Disabled => 1,
+            };
+            push @ShownUsers, {
+                Key      => '-',
+                Value    => $Self->{LayoutObject}->{LanguageObject}->Translate('Invalid Users'),
+                Disabled => 1,
+            };
+            push @ShownUsers, {
+                Key      => '-',
+                Value    => '',
+                Disabled => 1,
+            };
+            for my $UserID ( sort keys %UsersInvalid ) {
+                push @ShownUsers, {
+                    Key   => $UserID,
+                    Value => $UsersInvalid{$UserID},
+                };
+            }
+        }
+
         $Param{UserStrg} = $Self->{LayoutObject}->BuildSelection(
-            Data       => \%ShownUsers,
+            Data       => \@ShownUsers,
             Name       => 'OwnerIDs',
             Multiple   => 1,
             Size       => 5,
             SelectedID => $GetParam{OwnerIDs},
         );
         $Param{CreatedUserStrg} = $Self->{LayoutObject}->BuildSelection(
-            Data       => \%ShownUsers,
+            Data       => \@ShownUsers,
             Name       => 'CreatedUserIDs',
             Multiple   => 1,
             Size       => 5,
@@ -1494,7 +1544,7 @@ sub Run {
         );
         if ( $Self->{ConfigObject}->Get('Ticket::Watcher') ) {
             $Param{WatchUserStrg} = $Self->{LayoutObject}->BuildSelection(
-                Data       => \%ShownUsers,
+                Data       => \@ShownUsers,
                 Name       => 'WatchUserIDs',
                 Multiple   => 1,
                 Size       => 5,
@@ -1503,7 +1553,7 @@ sub Run {
         }
         if ( $Self->{ConfigObject}->Get('Ticket::Responsible') ) {
             $Param{ResponsibleStrg} = $Self->{LayoutObject}->BuildSelection(
-                Data       => \%ShownUsers,
+                Data       => \@ShownUsers,
                 Name       => 'ResponsibleIDs',
                 Multiple   => 1,
                 Size       => 5,

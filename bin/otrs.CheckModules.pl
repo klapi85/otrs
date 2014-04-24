@@ -28,6 +28,9 @@ use lib dirname($RealBin);
 use lib dirname($RealBin) . '/Kernel/cpan-lib';
 use lib dirname($RealBin) . '/Custom';
 
+use Kernel::System::Environment;
+use Kernel::System::VariableCheck qw( :all );
+
 # on Windows, we only have ANSI support if Win32::Console::ANSI is present
 # turn off colors if it is not available
 BEGIN {
@@ -44,10 +47,6 @@ use ExtUtils::MakeMaker;
 use File::Path;
 use Getopt::Long;
 use Term::ANSIColor;
-
-use Kernel::System::Environment;
-
-use Kernel::System::VariableCheck qw(:all);
 
 our %InstTypeToCMD = (
 
@@ -143,6 +142,16 @@ if ( $ENV{nocolors} || $Options =~ m{\A nocolors}msxi ) {
 
 # config
 my @NeededModules = (
+    {
+        Module    => 'Apache2::Reload',
+        Required  => 1,
+        Comment   => 'Required to use mod_perl.',
+        InstTypes => {
+            aptget => 'libapache2-mod-perl2',
+            ppm    => 'mod_perl-2.0',
+            zypper => 'apache2-mod_perl',
+        },
+    },
     {
         Module    => 'Crypt::Eksblowfish::Bcrypt',
         Required  => 0,
@@ -599,11 +608,17 @@ sub _Check {
             }
         }
         else {
+            my $OutputVersion = $Version;
+
+            if ( $OutputVersion =~ m{ [0-9.] }xms ) {
+                $OutputVersion = 'v' . $OutputVersion;
+            }
+
             if ($NoColors) {
-                print "ok (v$Version)\n";
+                print "ok ($OutputVersion)\n";
             }
             else {
-                print color('green') . 'ok' . color('reset') . " (v$Version)\n";
+                print color('green') . 'ok' . color('reset') . " ($OutputVersion)\n";
             }
         }
     }
@@ -707,6 +722,7 @@ sub _VersionClean {
     my (%Param) = @_;
 
     return 0 if !$Param{Version};
+    return 0 if $Param{Version} eq 'undef';
 
     # replace all special characters with an dot
     $Param{Version} =~ s{ [_-] }{.}xmsg;

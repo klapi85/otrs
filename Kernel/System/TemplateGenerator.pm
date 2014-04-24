@@ -419,53 +419,6 @@ sub Sender {
     return $Sender;
 }
 
-=item Response()
-
-DEPRECATED: This function will be removed in further versions of otrs.
-
-generate response
-
-    my %Response = $TemplateGeneratorObject->Response(
-        TicketID   => 123,
-        ArticleID  => 123,
-        ResponseID => 123
-        UserID     => 123,
-    );
-
-returns
-    StandardResponse
-    Salutation
-    Signature
-
-=cut
-
-sub Response {
-    my ( $Self, %Param ) = @_;
-
-    # check needed stuff
-    for (qw(TicketID ResponseID Data UserID)) {
-        if ( !$Param{$_} ) {
-            $Self->{LogObject}->Log( Priority => 'error', Message => "Need $_!" );
-            return;
-        }
-    }
-
-    $Param{TemplateID} = $Param{ResponseID};
-
-    my $ResponseText = $Self->Template(%Param);
-
-    my $Salutation = $Self->Salutation(%Param);
-
-    my $Signature = $Self->Signature(%Param);
-
-    return (
-        StandardResponse => $ResponseText,
-        StdResponse      => $ResponseText,
-        Salutation       => $Salutation,
-        Signature        => $Signature,
-    );
-}
-
 =item Template()
 
 generate template
@@ -701,18 +654,18 @@ sub AutoResponse {
         TicketID => $Param{TicketID},
         UserID   => $Param{UserID},
     );
-
-    # prepare subject (insert old subject)
-    my $Subject = $Param{OrigHeader}->{Subject} || '';
-    $Subject = $Self->{TicketObject}->TicketSubjectClean(
-        TicketNumber => $Ticket{TicketNumber},
-        Subject      => $Subject,
+    $AutoResponse{Subject} = $Self->_Replace(
+        RichText => 0,
+        Text     => $AutoResponse{Subject},
+        Data     => {
+            %{ $Param{OrigHeader} },
+            From => $Param{OrigHeader}->{To},
+            To   => $Param{OrigHeader}->{From},
+        },
+        TicketID => $Param{TicketID},
+        UserID   => $Param{UserID},
     );
-    if ( $AutoResponse{Subject} =~ /<OTRS_CUSTOMER_SUBJECT\[(.+?)\]>/ ) {
-        my $SubjectChar = $1;
-        $Subject =~ s/^(.{$SubjectChar}).*$/$1 [...]/;
-        $AutoResponse{Subject} =~ s/<OTRS_CUSTOMER_SUBJECT\[.+?\]>/$Subject/g;
-    }
+
     $AutoResponse{Subject} = $Self->{TicketObject}->TicketSubjectBuild(
         TicketNumber => $Ticket{TicketNumber},
         Subject      => $AutoResponse{Subject},
@@ -1058,7 +1011,7 @@ sub _Replace {
             UserLanguage => $Param{Language},
         );
         for my $Field (qw(Type State StateType Lock Priority)) {
-            $Ticket{$Field} = $LanguageObject->Get( $Ticket{$Field} );
+            $Ticket{$Field} = $LanguageObject->Translate( $Ticket{$Field} );
         }
     }
 
@@ -1097,7 +1050,7 @@ sub _Replace {
         ATTRIBUTE:
         for my $Attribute ( sort keys %Recipient ) {
             next ATTRIBUTE if !defined $Recipient{$Attribute};
-            $Param{Text} =~ s/$Tag$_$End/$Recipient{$Attribute}/gi;
+            $Param{Text} =~ s/$Tag$Attribute$End/$Recipient{$Attribute}/gi;
         }
     }
 

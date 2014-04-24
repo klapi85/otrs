@@ -19,8 +19,6 @@ use File::stat;
 use Unicode::Normalize;
 use List::Util qw();
 
-use Kernel::System::Encode;
-
 =head1 NAME
 
 Kernel::System::Main - main object
@@ -37,26 +35,11 @@ All main functions to load modules, die, and handle files.
 
 =item new()
 
-create new object
+create new object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $MainObject = $Kernel::OM->Get('MainObject');
 
 =cut
 
@@ -67,14 +50,10 @@ sub new {
     my $Self = {};
     bless( $Self, $Type );
 
-    # check needed objects
-    for my $Object (qw(ConfigObject LogObject)) {
-        $Self->{$Object} = $Param{$Object} || die "Got no $Object!";
+    # fetch needed objects
+    for my $Object (qw(ConfigObject LogObject EncodeObject)) {
+        $Self->{$Object} = $Kernel::OM->Get($Object);
     }
-
-    # get or create encode object
-    $Self->{EncodeObject} = $Param{EncodeObject};
-    $Self->{EncodeObject} ||= Kernel::System::Encode->new( %{$Self} );
 
     # set debug mode
     $Self->{Debug} = $Param{Debug} || 0;
@@ -144,10 +123,18 @@ sub Require {
     if ( !$Result ) {
 
         if ( !$Param{Silent} ) {
+            my $Message = "Module $Module not found/could not be loaded";
+            if ( !-f $File ) {
+                $Message = "Module $Module not in \@INC (@INC)";
+            }
+            elsif ( !-r $File ) {
+                $Message = "Module could not be loaded (no read permissions on $File)";
+            }
+
             $Self->{LogObject}->Log(
                 Caller   => 1,
                 Priority => 'error',
-                Message  => "Module $Module not found/could not be loaded!",
+                Message  => $Message,
             );
         }
 
@@ -294,26 +281,26 @@ sub FilenameCleanUp {
 to read files from file system
 
     my $ContentSCALARRef = $MainObject->FileRead(
-        Directory => 'c:\some\location\me_to',
-        Filename  => 'alal.xml',
+        Directory => 'c:\some\location',
+        Filename  => 'file2read.txt',
         # or Location
-        Location  => 'c:\some\location\me_to\alal.xml'
+        Location  => 'c:\some\location\file2read.txt',
     );
 
     my $ContentARRAYRef = $MainObject->FileRead(
-        Directory => 'c:\some\location\me_to',
-        Filename  => 'alal.xml',
+        Directory => 'c:\some\location',
+        Filename  => 'file2read.txt',
         # or Location
-        Location  => 'c:\some\location\me_to\alal.xml'
+        Location  => 'c:\some\location\file2read.txt',
 
         Result    => 'ARRAY', # optional - SCALAR|ARRAY
     );
 
     my $ContentSCALARRef = $MainObject->FileRead(
-        Directory       => 'c:\some\location\me_to',
-        Filename        => 'alal.xml',
+        Directory       => 'c:\some\location',
+        Filename        => 'file2read.txt',
         # or Location
-        Location        => 'c:\some\location\me_to\alal.xml'
+        Location        => 'c:\some\location\file2read.txt',
 
         Mode            => 'binmode', # optional - binmode|utf8
         Type            => 'Local',   # optional - Local|Attachment|MD5
@@ -415,23 +402,23 @@ to write data to file system
 
     my $FileLocation = $MainObject->FileWrite(
         Directory => 'c:\some\location',
-        Filename  => 'me_to/alal.xml',
+        Filename  => 'file2write.txt',
         # or Location
-        Location  => 'c:\some\location\me_to\alal.xml'
+        Location  => 'c:\some\location\file2write.txt',
 
         Content   => \$Content,
     );
 
     my $FileLocation = $MainObject->FileWrite(
         Directory  => 'c:\some\location',
-        Filename   => 'me_to/alal.xml',
+        Filename   => 'file2write.txt',
         # or Location
-        Location   => 'c:\some\location\me_to\alal.xml'
+        Location   => 'c:\some\location\file2write.txt',
 
         Content    => \$Content,
         Mode       => 'binmode', # binmode|utf8
         Type       => 'Local',   # optional - Local|Attachment|MD5
-        Permission => '644',     # unix file permissions
+        Permission => '644',     # optional - unix file permissions
     );
 
 Platform note: MacOS (HFS+) stores filenames as Unicode NFD internally,

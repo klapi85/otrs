@@ -35,67 +35,15 @@ All stats functions.
 
 =item new()
 
-create an object
+create an object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::DB;
-    use Kernel::System::Group;
-    use Kernel::System::Time;
-    use Kernel::System::User;
-    use Kernel::System::Stats;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        StatsObject => {
+            UserID  => 123,
+        }
     );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $GroupObject = Kernel::System::Group->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        MainObject   => $MainObject,
-        LogObject    => $LogObject,
-        DBObject     => $DBObject,
-    );
-    my $TimeObject = Kernel::System::Time->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-    );
-    my $UserObject = Kernel::System::User->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-        TimeObject   => $TimeObject,
-        DBObject     => $DBObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $StatsObject = Kernel::System::Stats->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        DBObject     => $DBObject,
-        MainObject   => $MainObject,
-        TimeObject   => $TimeObject,
-        GroupObject  => $GroupObject,
-        UserObject   => $UserObject,
-        UserID       => 123,
-    );
+    my $StatsObject = $Kernel::OM->Get('StatsObject');
 
 =cut
 
@@ -121,7 +69,7 @@ sub new {
 
     # create supplementary objects
     $Self->{XMLObject}   = Kernel::System::XML->new( %{$Self} );
-    $Self->{CacheObject} = Kernel::System::Cache->new( %{$Self} );
+    $Self->{CacheObject} = $Kernel::OM->Get('CacheObject');
 
     # temporary directory
     $Self->{StatsTempDir} = $Self->{ConfigObject}->Get('Home') . '/var/stats/';
@@ -618,7 +566,9 @@ sub StatsDelete {
 
 fetches all statistics that the current user may see
 
-    my $StatsRef = $StatsObject->StatsListGet();
+    my $StatsRef = $StatsObject->StatsListGet(
+        AccessRw => 1, # Optional, indicates that user may see all statistics
+    );
 
     Returns
 
@@ -680,8 +630,9 @@ sub StatsListGet {
             StatID             => $StatID,
             NoObjectAttributes => 1,
         );
+
         my $UserPermission = 0;
-        if ( $Self->{AccessRw} || $Self->{UserID} == 1 ) {
+        if ( $Param{AccessRw} || $Self->{UserID} == 1 ) {
             $UserPermission = 1;
         }
 
@@ -712,6 +663,7 @@ sub StatsListGet {
 lists all stats id's
 
     my $ArrayRef = $StatsObject->GetStatsList(
+        AccessRw  => 1, # Optional, indicates that user may see all statistics
         OrderBy   => 'ID' || 'Title' || 'Object', # optional
         Direction => 'ASC' || 'DESC',             # optional
     );
@@ -724,14 +676,7 @@ sub GetStatsList {
     $Param{OrderBy}   ||= 'ID';
     $Param{Direction} ||= 'ASC';
 
-    my $CacheKey = "GetStatsList::OrderBy::$Param{OrderBy}::Direction::$Param{Direction}";
-    my $Cache    = $Self->{CacheObject}->Get(
-        Type => 'Stats',
-        Key  => $CacheKey,
-    );
-    return $Cache if ref $Cache eq 'ARRAY';
-
-    my %ResultHash = %{ $Self->StatsListGet() || {} };
+    my %ResultHash = %{ $Self->StatsListGet(%Param) || {} };
 
     my @SortArray;
 
@@ -746,13 +691,6 @@ sub GetStatsList {
     if ( $Param{Direction} eq 'DESC' ) {
         @SortArray = reverse @SortArray;
     }
-
-    $Self->{CacheObject}->Set(
-        Type  => 'Stats',
-        Key   => $CacheKey,
-        Value => \@SortArray,
-        TTL   => 24 * 60 * 60,
-    );
 
     return \@SortArray;
 }
@@ -909,8 +847,8 @@ sub GenerateGraph {
 
     # set fonts so we can use non-latin characters
     my $FontDir    = $Self->{ConfigObject}->Get('Home') . '/var/fonts/';
-    my $TitleFont  = $FontDir . 'DejaVuSans-Bold.ttf';
-    my $LegendFont = $FontDir . 'DejaVuSans.ttf';
+    my $TitleFont  = $FontDir . $Self->{ConfigObject}->Get('Stats::Graph::TitleFont');
+    my $LegendFont = $FontDir . $Self->{ConfigObject}->Get('Stats::Graph::LegendFont');
     $Graph->set_title_font( $TitleFont, 14 );
 
     # there are different font options for different font types
@@ -950,7 +888,7 @@ sub GenerateGraph {
         textclr     => $Self->{ConfigObject}->Get('Stats::Graph::textclr')     || 'black',
         dclrs       => $Self->{ConfigObject}->Get('Stats::Graph::dclrs')
             || [
-            qw(red green blue yellow black purple orange pink marine cyan lgray lblue lyellow lgreen lred lpurple lorange lbrown)
+            qw(red green blue yellow purple orange pink marine cyan lgray lblue lyellow lgreen lred lpurple lorange lbrown)
             ],
         x_tick_offset       => 0,
         x_label_position    => 1 / 2,
@@ -2075,8 +2013,13 @@ sub StatsResultCacheCompute {
     my %GetParam = $Self->_StatsParamsGenerate(%Param);
     return if !%GetParam;
 
-    my $CacheKey = "StatsRunCached::$Self->{UserID}::$Param{StatID}::";
-    $CacheKey .= $Self->{MainObject}->Dump( \%GetParam );
+    my $DumpString = $Self->{MainObject}->Dump( \%GetParam );
+
+    my $MD5Sum = $Self->{MainObject}->MD5sum(
+        String => \$DumpString,
+    );
+
+    my $CacheKey = "StatsRunCached::$Self->{UserID}::$Param{StatID}::$MD5Sum";
 
     my $Result = $Self->StatsRun(
         StatID   => $Param{StatID},
@@ -2118,8 +2061,13 @@ sub StatsResultCacheGet {
     my %GetParam = $Self->_StatsParamsGenerate(%Param);
     return if !%GetParam;
 
-    my $CacheKey = "StatsRunCached::$Self->{UserID}::$Param{StatID}::";
-    $CacheKey .= $Self->{MainObject}->Dump( \%GetParam );
+    my $DumpString = $Self->{MainObject}->Dump( \%GetParam );
+
+    my $MD5Sum = $Self->{MainObject}->MD5sum(
+        String => \$DumpString,
+    );
+
+    my $CacheKey = "StatsRunCached::$Self->{UserID}::$Param{StatID}::$MD5Sum";
 
     return $Self->{CacheObject}->Get(
         Type => 'StatsRun',
@@ -2678,14 +2626,28 @@ sub _GenerateStaticStats {
         }
     }
 
+    my $UserObject = Kernel::System::User->new(
+        MainObject   => $Self->{MainObject},
+        ConfigObject => $Self->{ConfigObject},
+        EncodeObject => $Self->{EncodeObject},
+        LogObject    => $Self->{LogObject},
+        TimeObject   => $Self->{TimeObject},
+        DBObject     => $Self->{DBObject},
+    );
+
+    my %User = $UserObject->GetUserData(
+        UserID => $Self->{UserID},
+    );
+
     # run stats function
     @Result = $StatObject->Run(
         %GetParam,
 
         # these two lines are requirements of me, perhaps this
         # information is needed for former static stats
-        Format => $Param{Format}->[0],
-        Module => $Param{ObjectModule},
+        Format       => $Param{Format}->[0],
+        Module       => $Param{ObjectModule},
+        UserLanguage => $User{UserLanguage},
     );
 
     $Result[0]->[0] = $Param{Title} . ' ' . $Result[0]->[0];
@@ -2842,7 +2804,7 @@ sub _GenerateDynamicStats {
                         ( $Y, $M, $D, $h, $m, $s )
                             = Add_Delta_DHMS( $Y, $M, $D, $h, $m, $s, 0, 0, -$Count, 0 );
                         $Element->{TimeStart}
-                            = sprintf( "%04d-%02d-%02d %02d:%02d:%02d", $Y, $M, $h, $m, 0, 0 );
+                            = sprintf( "%04d-%02d-%02d %02d:%02d:%02d", $Y, $M, $D, $h, $m, 0 );
                     }
                     elsif ( $Element->{TimeRelativeUnit} eq 'Second' ) {
                         ( $Y, $M, $D, $h, $m, $s )
@@ -2892,6 +2854,27 @@ sub _GenerateDynamicStats {
             $RestrictionAttribute{$Element} = $RestrictionPart->{SelectedValues};
         }
     }
+
+    my $UserObject = Kernel::System::User->new(
+        MainObject   => $Self->{MainObject},
+        ConfigObject => $Self->{ConfigObject},
+        EncodeObject => $Self->{EncodeObject},
+        LogObject    => $Self->{LogObject},
+        TimeObject   => $Self->{TimeObject},
+        DBObject     => $Self->{DBObject},
+    );
+
+    my %User = $UserObject->GetUserData(
+        UserID => $Self->{UserID},
+    );
+
+    my $LanguageObject = Kernel::Language->new(
+        MainObject   => $Self->{MainObject},
+        ConfigObject => $Self->{ConfigObject},
+        EncodeObject => $Self->{EncodeObject},
+        LogObject    => $Self->{LogObject},
+        UserLanguage => $User{UserLanguage},
+    );
 
     # get the selected Xvalue
     my $Xvalue = {};
@@ -3028,7 +3011,7 @@ sub _GenerateDynamicStats {
                     -1
                     );
                 my $Dow = Day_of_Week( $Year, $Month, $Day );
-                $Dow = Day_of_Week_Abbreviation($Dow);
+                $Dow = $LanguageObject->Translate( Day_of_Week_Abbreviation($Dow) );
                 if ( $ToDay eq $Day ) {
                     push @HeaderLine, "$Dow $Day";
                 }
@@ -3052,9 +3035,10 @@ sub _GenerateDynamicStats {
                     );
                 my %WeekNum;
                 ( $WeekNum{Week}, $WeekNum{Year} ) = Week_of_Year( $Year, $Month, $Day );
+                my $TranslateWeek = $LanguageObject->Translate('week');
                 push(
                     @HeaderLine,
-                    sprintf( "Week %02d-%04d - ", $WeekNum{Week}, $WeekNum{Year} ) .
+                    sprintf( "$TranslateWeek %02d-%04d - ", $WeekNum{Week}, $WeekNum{Year} ) .
                         sprintf(
                         "%02d.%02d.%04d - %02d.%02d.%04d",
                         $Day, $Month, $Year, $ToDay, $ToMonth, $ToYear
@@ -3069,7 +3053,8 @@ sub _GenerateDynamicStats {
                     -1
                     );
                 if ( $ToMonth eq $Month ) {
-                    push @HeaderLine, "$MonthArrayRef->[$Month] $Month";
+                    my $TranslateMonth = $LanguageObject->Translate( $MonthArrayRef->[$Month] );
+                    push @HeaderLine, "$TranslateMonth $Month";
                 }
                 else {
                     push(
@@ -3127,7 +3112,7 @@ sub _GenerateDynamicStats {
         # build the headerline
 
         for my $Valuename ( @{ $Xvalue->{SelectedValues} } ) {
-            push @HeaderLine, $Xvalue->{Values}{$Valuename};
+            push @HeaderLine, $LanguageObject->Translate( $Xvalue->{Values}{$Valuename} );
         }
     }
 
@@ -3144,7 +3129,7 @@ sub _GenerateDynamicStats {
         if ( $Ref1->{Block} ne 'Time' ) {
             my %SelectedValues;
             for my $Ref2 ( @{ $Ref1->{SelectedValues} } ) {
-                $SelectedValues{$Ref2} = $Ref1->{Values}{$Ref2};
+                $SelectedValues{$Ref2} = $LanguageObject->Translate( $Ref1->{Values}{$Ref2} );
             }
             push(
                 @ArraySelected,
@@ -3486,13 +3471,17 @@ sub _GenerateDynamicStats {
 
     # get the first column name in the headerline
     if ($ColumnName) {
-        unshift @HeaderLine, $ColumnName;
+        unshift @HeaderLine, $LanguageObject->Translate($ColumnName);
     }
     elsif ( $ArraySelected[1] ) {
-        unshift( @HeaderLine, $ArraySelected[0]{Name} . ' - ' . $ArraySelected[1]{Name} );
+        unshift(
+            @HeaderLine,
+            $LanguageObject->Translate( $ArraySelected[0]{Name} ) . ' - '
+                . $LanguageObject->Translate( $ArraySelected[1]{Name} )
+        );
     }
     elsif ( $ArraySelected[0] ) {
-        unshift( @HeaderLine, $ArraySelected[0]{Name} || '' );
+        unshift( @HeaderLine, $LanguageObject->Translate( $ArraySelected[0]{Name} ) || '' );
     }
     else {
 

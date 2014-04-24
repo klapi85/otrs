@@ -63,36 +63,23 @@ sub new {
         $Self->{StoredFilters} = $StoredFilters;
     }
 
+    # get the configured dyanmic fields from the Small Overview setting as a basis
+    my %DefaultDynamicFields
+        = %{ $Self->{ConfigObject}->Get("Ticket::Frontend::OverviewSmall")->{DynamicField} || {} };
+
+    my %DefaultColumns
+        = map { 'DynamicField_' . $_ => $DefaultDynamicFields{$_} } sort keys %DefaultDynamicFields;
+
+    # take general settings (Frontend::Agent) if not defined for the screen
+    $Self->{Config}->{DefaultColumns} //= $Self->{ConfigObject}->Get('DefaultOverviewColumns');
+
+    # check for default settings specific for this screen, should overide the dynamic fields
+    %DefaultColumns = ( %DefaultColumns, %{ $Self->{Config}->{DefaultColumns} || {} } );
+
     # configure columns
-    my @ColumnsEnabled;
-    my @ColumnsAvailable;
-
-    # take general settings if not defined for the screen
-    if ( !defined $Self->{Config}->{DefaultColumns} ) {
-        $Self->{Config}->{DefaultColumns} = $Self->{ConfigObject}->Get('DefaultOverviewColumns');
-    }
-
-    # check for default settings
-    if (
-        $Self->{Config}->{DefaultColumns}
-        && IsHashRefWithData( $Self->{Config}->{DefaultColumns} )
-        )
-    {
-        @ColumnsAvailable = grep { $Self->{Config}->{DefaultColumns}->{$_} ne '0' }
-            sort keys %{ $Self->{Config}->{DefaultColumns} };
-        @ColumnsEnabled = grep { $Self->{Config}->{DefaultColumns}->{$_} eq '2' }
-            sort _DefaultColumnSort keys %{ $Self->{Config}->{DefaultColumns} };
-    }
-
-    # get dynamic fields
-    my $DynamicFieldList = $Self->{DynamicFieldObject}->DynamicFieldList(
-        ObjectType => 'Ticket',
-        ResultType => 'HASH',
-    );
-
-    for my $DynamicFieldID ( sort keys %{$DynamicFieldList} ) {
-        push @ColumnsAvailable, 'DynamicField_' . $DynamicFieldList->{$DynamicFieldID};
-    }
+    my @ColumnsAvailable = grep { $DefaultColumns{$_} ne '0' } sort keys %DefaultColumns;
+    my @ColumnsEnabled
+        = grep { $DefaultColumns{$_} eq '2' } sort _DefaultColumnSort keys %DefaultColumns;
 
     # if preference settings are available, take them
     if ( $Preferences{ $Self->{PrefKeyColumns} } ) {
@@ -272,7 +259,13 @@ sub ActionRow {
     # add translations for the allocation lists for regular columns
     my $Columns = $Self->{ConfigObject}->Get('DefaultOverviewColumns') || {};
     if ( $Columns && IsHashRefWithData($Columns) ) {
+
+        COLUMN:
         for my $Column ( sort keys %{$Columns} ) {
+
+            # dynamic fields will be translated in the next block
+            next COLUMN if $Column =~ m{ \A DynamicField_ }xms;
+
             $Self->{LayoutObject}->Block(
                 Name => 'ColumnTranslation',
                 Data => {
@@ -399,7 +392,7 @@ sub Run {
                     DynamicFields => 0,
                 );
                 if ( !$Article{Title} ) {
-                    $Article{Title} = $Self->{LayoutObject}->{LanguageObject}->Get(
+                    $Article{Title} = $Self->{LayoutObject}->{LanguageObject}->Translate(
                         'This ticket has no title or subject'
                     );
                 }
@@ -578,7 +571,7 @@ sub Run {
 
                 # set title description
                 my $TitleDesc = $OrderBy eq 'Down' ? 'sorted descending' : 'sorted ascending';
-                $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Get($TitleDesc);
+                $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Translate($TitleDesc);
                 $Title .= ', ' . $TitleDesc;
             }
 
@@ -644,7 +637,7 @@ sub Run {
 
                     # add title description
                     my $TitleDesc = $OrderBy eq 'Down' ? 'sorted ascending' : 'sorted descending';
-                    $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Get($TitleDesc);
+                    $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Translate($TitleDesc);
                     $Title .= ', ' . $TitleDesc;
                 }
 
@@ -654,17 +647,19 @@ sub Run {
                 if ( $Column eq 'Title' ) {
 
                     $TranslatedWord
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('From') . ' / ';
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('From') . ' / ';
 
                     if ( $Self->{SmallViewColumnHeader} eq 'LastCustomerSubject' ) {
-                        $TranslatedWord .= $Self->{LayoutObject}->{LanguageObject}->Get('Subject');
+                        $TranslatedWord
+                            .= $Self->{LayoutObject}->{LanguageObject}->Translate('Subject');
                     }
                     elsif ( $Self->{SmallViewColumnHeader} eq 'TicketTitle' ) {
-                        $TranslatedWord .= $Self->{LayoutObject}->{LanguageObject}->Get('Title');
+                        $TranslatedWord
+                            .= $Self->{LayoutObject}->{LanguageObject}->Translate('Title');
                     }
                 }
                 else {
-                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Get($Column);
+                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Translate($Column);
                 }
 
                 my $FilterTitle     = $Column;
@@ -680,7 +675,8 @@ sub Run {
                     $CSS .= ' FilterActive';
                     $FilterTitleDesc = 'filter active';
                 }
-                $FilterTitleDesc = $Self->{LayoutObject}->{LanguageObject}->Get($FilterTitleDesc);
+                $FilterTitleDesc
+                    = $Self->{LayoutObject}->{LanguageObject}->Translate($FilterTitleDesc);
                 $FilterTitle .= ', ' . $FilterTitleDesc;
 
                 $Self->{LayoutObject}->Block(
@@ -826,30 +822,34 @@ sub Run {
 
                     # add title description
                     my $TitleDesc = $OrderBy eq 'Down' ? 'sorted ascending' : 'sorted descending';
-                    $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Get($TitleDesc);
+                    $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Translate($TitleDesc);
                     $Title .= ', ' . $TitleDesc;
                 }
 
                 # translate the column name to write it in the current language
                 my $TranslatedWord;
                 if ( $Column eq 'EscalationTime' ) {
-                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Get('Service Time');
+                    $TranslatedWord
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Service Time');
                 }
                 elsif ( $Column eq 'EscalationResponseTime' ) {
                     $TranslatedWord
-                        = $Self->{LayoutObject}->{LanguageObject}->Get('First Response Time');
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('First Response Time');
                 }
                 elsif ( $Column eq 'EscalationSolutionTime' ) {
-                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Get('Solution Time');
+                    $TranslatedWord
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Solution Time');
                 }
                 elsif ( $Column eq 'EscalationUpdateTime' ) {
-                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Get('Update Time');
+                    $TranslatedWord
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Update Time');
                 }
                 elsif ( $Column eq 'PendingTime' ) {
-                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Get('Pending till');
+                    $TranslatedWord
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate('Pending till');
                 }
                 else {
-                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Get($Column);
+                    $TranslatedWord = $Self->{LayoutObject}->{LanguageObject}->Translate($Column);
                 }
 
                 my $FilterTitle     = $Column;
@@ -858,7 +858,8 @@ sub Run {
                     $CSS .= ' FilterActive';
                     $FilterTitleDesc = 'filter active';
                 }
-                $FilterTitleDesc = $Self->{LayoutObject}->{LanguageObject}->Get($FilterTitleDesc);
+                $FilterTitleDesc
+                    = $Self->{LayoutObject}->{LanguageObject}->Translate($FilterTitleDesc);
                 $FilterTitle .= ', ' . $FilterTitleDesc;
 
                 $Self->{LayoutObject}->Block(
@@ -1036,7 +1037,7 @@ sub Run {
                         # add title description
                         my $TitleDesc
                             = $OrderBy eq 'Down' ? 'sorted ascending' : 'sorted descending';
-                        $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Get($TitleDesc);
+                        $TitleDesc = $Self->{LayoutObject}->{LanguageObject}->Translate($TitleDesc);
                         $Title .= ', ' . $TitleDesc;
                     }
 
@@ -1046,7 +1047,7 @@ sub Run {
                         $FilterTitleDesc = 'filter active';
                     }
                     $FilterTitleDesc
-                        = $Self->{LayoutObject}->{LanguageObject}->Get($FilterTitleDesc);
+                        = $Self->{LayoutObject}->{LanguageObject}->Translate($FilterTitleDesc);
                     $FilterTitle .= ', ' . $FilterTitleDesc;
 
                     $Self->{LayoutObject}->Block(
@@ -1680,7 +1681,7 @@ sub _InitialColumnFilter {
     return if !$Self->{ValidFilterableColumns}->{ $Param{ColumnName} };
 
     my $Label = $Param{Label} || $Param{ColumnName};
-    $Label = $Self->{LayoutObject}->{LanguageObject}->Get($Label);
+    $Label = $Self->{LayoutObject}->{LanguageObject}->Translate($Label);
 
     # set fixed values
     my $Data = [
@@ -1814,7 +1815,7 @@ sub _ColumnFilterJSON {
 
     my $Label = $Param{Label};
     $Label =~ s{ \A DynamicField_ }{}gxms;
-    $Label = $Self->{LayoutObject}->{LanguageObject}->Get($Label);
+    $Label = $Self->{LayoutObject}->{LanguageObject}->Translate($Label);
 
     # set fixed values
     my $Data = [
@@ -1899,6 +1900,23 @@ sub _DefaultColumnSort {
         Priority               => 193,
     );
 
+    # dynamic fields can not be on the DefaultColumns sorting hash
+    # when comparing 2 dynamic fields sorting must be alphabetical
+    if ( !$DefaultColumns{$a} && !$DefaultColumns{$b} ) {
+        return $a cmp $b;
+    }
+
+    # when a dynamic field is compared to a ticket attribute it must be higher
+    elsif ( !$DefaultColumns{$a} ) {
+        return 1;
+    }
+
+    # when a ticket attribute is compared to a dynamic field it must be lower
+    elsif ( !$DefaultColumns{$b} ) {
+        return -1;
+    }
+
+    # otherwise do a numerical comparison with the ticket attributes
     return $DefaultColumns{$a} <=> $DefaultColumns{$b};
 }
 

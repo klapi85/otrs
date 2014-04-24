@@ -30,14 +30,7 @@ use lib dirname($RealBin) . '/Custom';
 
 use Getopt::Std qw();
 
-use Kernel::Config;
-use Kernel::System::Encode;
-use Kernel::System::Log;
-use Kernel::System::Main;
-use Kernel::System::Time;
-use Kernel::System::DB;
-use Kernel::Language;
-use Kernel::System::SysConfig;
+use Kernel::System::ObjectManager;
 
 sub PrintUsage {
     print <<"EOF";
@@ -71,21 +64,21 @@ Optional Parameters
 
     otrs.CreateTranslationFile.pl -l all -p
 
+  To output debug information, use -v.
+
 EOF
 }
 
 # common objects
-my %CommonObject = ();
-$CommonObject{ConfigObject} = Kernel::Config->new();
-$CommonObject{EncodeObject} = Kernel::System::Encode->new(%CommonObject);
-$CommonObject{LogObject}    = Kernel::System::Log->new(
-    LogPrefix => 'OTRS-otrs.CreateTranslationFile.pl',
-    %CommonObject,
+local $Kernel::OM = Kernel::System::ObjectManager->new(
+    LogObject => {
+        LogPrefix => 'OTRS-otrs.CreateTranslationFile.pl',
+    },
 );
-$CommonObject{MainObject}      = Kernel::System::Main->new(%CommonObject);
-$CommonObject{TimeObject}      = Kernel::System::Time->new(%CommonObject);
-$CommonObject{DBObject}        = Kernel::System::DB->new(%CommonObject);
-$CommonObject{SysConfigObject} = Kernel::System::SysConfig->new(%CommonObject);
+my %CommonObject = $Kernel::OM->ObjectHash(
+    Objects =>
+        [qw(ConfigObject EncodeObject LogObject MainObject TimeObject DBObject SysConfigObject)],
+);
 
 my $Home = $CommonObject{ConfigObject}->Get('Home');
 
@@ -96,7 +89,7 @@ my $BreakLineAfterChars = 60;
     my %Opts;
 
     # get opts
-    Getopt::Std::getopt( 'lmp', \%Opts );
+    Getopt::Std::getopt( 'lmpv', \%Opts );
 
     # check params
     if ( $Opts{l} && $Opts{l} eq 'all' ) {
@@ -129,6 +122,7 @@ my $BreakLineAfterChars = 60;
             Module        => $Opts{m},
             PurgeObsolete => exists $Opts{p} ? 1 : 0,
             Stats         => \%Stats,
+            Verbose       => exists $Opts{v} ? 1 : 0,
         );
     }
 
@@ -237,7 +231,9 @@ sub HandleLanguage {
         Filter    => '*.tt',
     );
 
-    print "\nReading template files:\n";
+    if ( $Param{Verbose} ) {
+        print "\nReading template files:\n";
+    }
 
     for my $File (@List) {
 
@@ -246,101 +242,94 @@ sub HandleLanguage {
             Mode     => 'utf8',
         );
 
-        if ( ref $ContentRef ) {
-            my $Content = ${$ContentRef};
-
-            # while ( my $Line = <$In> ) {
-            #     if ( $Line !~ /^#/ ) {
-            #         $Content .= $Line;
-            #     }
-            # }
-            # close $In;
-            $File =~ s!^.*/(.+?)\.tt!$1!;
-            print "$File ";
-            $Data .= "\n" . $Indent . "# Template: $File\n";
-
-            # do translation
-            $Content =~ s{
-                Translate\(
-                    \s*
-                    "(.*?)(?<!\\)"
-                    \s*
-                    (?:,[^\)]+)?
-                \)
-                (?:\s|[|])
-            }
-            {
-                my $Word = $1 // '';
-
-                # unescape any \" signs
-                $Word =~ s{\\"}{"}smxg;
-
-                # if we translate a module, we must handle also that possibly
-                # there is already a translation in the core files
-                if ($IsSubTranslation) {
-                    # ignore word if already used
-                    if ( $Word && !exists $UsedWords{$Word} && !exists $LanguageCoreObject->{Translation}->{$Word} ) {
-
-                        # remove it from misc list
-                        $UsedWordsMisc{$Word} = 1;
-
-                        # lookup for existing translation
-                        $UsedWords{$Word} = $LanguageObject->{Translation}->{$Word};
-                        my $Translation = $UsedWords{$Word} || '';
-                        $Translation =~ s/'/\\'/g;
-                        my $Key = $Word;
-                        $Key =~ s/'/\\'/g;
-
-                        $Param{Stats}->{$Param{Language}}->{$Word} = $Translation;
-
-                        if ($Key !~ /(a href|\$(Text|Quote)\{")/i) {
-                            if (length($Key) < $BreakLineAfterChars) {
-                                $Data .= $Indent . "\$Self->{Translation}->{'$Key'} = '$Translation';\n";
-                            }
-                            else {
-                                $Data .= $Indent . "\$Self->{Translation}->{'$Key'} =\n";
-                                $Data .= $Indent . '    ' . "'$Translation';\n";
-                            }
-                        }
-                    }
-                }
-                else {
-                    # ignore word if already used
-                    if ( $Word && !exists $UsedWords{$Word} ) {
-
-                        # remove it from misc list
-                        $UsedWordsMisc{$Word} = 1;
-
-                        # lookup for existing translation
-                        $UsedWords{$Word} = $LanguageCoreObject->{Translation}->{$Word};
-                        my $Translation = $UsedWords{$Word} || '';
-                        $Translation =~ s/'/\\'/g;
-
-                        $Param{Stats}->{$Param{Language}}->{$Word} = $Translation;
-
-                        my $Key = $Word;
-                        $Key =~ s/'/\\'/g;
-                        if ($Key !~ /(a href|\$(Text|Quote)\{")/i) {
-                            if (length($Key) < $BreakLineAfterChars) {
-                                $Data .= $Indent . "'$Key' => '$Translation',\n";
-                            }
-                            else {
-                                $Data .= $Indent . "'$Key' =>\n";
-                                $Data .= $Indent . '    ' . "'$Translation',\n";
-                            }
-                        }
-                    }
-                }
-                '';
-            }egx;
-        }
-        else {
+        if ( !ref $ContentRef ) {
             die "Can't open $File: $!";
         }
+
+        my $Content = ${$ContentRef};
+
+        $File =~ s!^.*/(.+?)\.tt!$1!;
+        if ( $Param{Verbose} ) {
+            print "$File ";
+        }
+        $Data .= "\n" . $Indent . "# Template: $File\n";
+
+        # do translation
+        $Content =~ s{
+            Translate\(
+                \s*
+                "(.*?)(?<!\\)"
+                \s*
+                (?:,[^\)]+)?
+            \)
+            (?:\s|[|])
+        }
+        {
+            my $Word = $1 // '';
+
+            # unescape any \" signs
+            $Word =~ s{\\"}{"}smxg;
+
+            # if we translate a module, we must handle also that possibly
+            # there is already a translation in the core files
+            if ($IsSubTranslation) {
+                # ignore word if already used
+                if ( $Word && !exists $UsedWords{$Word} && !exists $LanguageCoreObject->{Translation}->{$Word} ) {
+
+                    # remove it from misc list
+                    $UsedWordsMisc{$Word} = 1;
+
+                    # lookup for existing translation
+                    $UsedWords{$Word} = $LanguageObject->{Translation}->{$Word};
+                    my $Translation = $UsedWords{$Word} || '';
+                    $Translation =~ s/'/\\'/g;
+                    my $Key = $Word;
+                    $Key =~ s/'/\\'/g;
+
+                    $Param{Stats}->{$Param{Language}}->{$Word} = $Translation;
+
+                    if (length($Key) < $BreakLineAfterChars) {
+                        $Data .= $Indent . "\$Self->{Translation}->{'$Key'} = '$Translation';\n";
+                    }
+                    else {
+                        $Data .= $Indent . "\$Self->{Translation}->{'$Key'} =\n";
+                        $Data .= $Indent . '    ' . "'$Translation';\n";
+                    }
+                }
+            }
+            else {
+                # ignore word if already used
+                if ( $Word && !exists $UsedWords{$Word} ) {
+
+                    # remove it from misc list
+                    $UsedWordsMisc{$Word} = 1;
+
+                    # lookup for existing translation
+                    $UsedWords{$Word} = $LanguageCoreObject->{Translation}->{$Word};
+                    my $Translation = $UsedWords{$Word} || '';
+                    $Translation =~ s/'/\\'/g;
+
+                    $Param{Stats}->{$Param{Language}}->{$Word} = $Translation;
+
+                    my $Key = $Word;
+                    $Key =~ s/'/\\'/g;
+                    if (length($Key) < $BreakLineAfterChars) {
+                        $Data .= $Indent . "'$Key' => '$Translation',\n";
+                    }
+                    else {
+                        $Data .= $Indent . "'$Key' =>\n";
+                        $Data .= $Indent . '    ' . "'$Translation',\n";
+                    }
+                }
+            }
+            '';
+        }egx;
     }
 
     # add translatable strings from SysConfig
-    print "SysConfig\n";
+    if ( $Param{Verbose} ) {
+        print "SysConfig\n";
+    }
     $Data .= "\n" . $Indent . "# SysConfig\n";
     my @Strings = $CommonObject{SysConfigObject}->ConfigItemTranslatableStrings();
 
@@ -391,7 +380,9 @@ sub HandleLanguage {
     }
 
     # add misc words
-    print "Obsolete Entries\n\n";
+    if ( $Param{Verbose} ) {
+        print "Obsolete Entries\n\n";
+    }
     $Data .= "\n";
     $Data .= $Indent . "#\n";
     $Data .= $Indent . "# OBSOLETE ENTRIES FOR REFERENCE, DO NOT TRANSLATE!\n";
@@ -526,11 +517,15 @@ EOF
     }
 
     if ( -e $TargetFile ) {
-        print "Moving $TargetFile to $TargetFile.old\n";
+        if ( $Param{Verbose} ) {
+            print "Moving $TargetFile to $TargetFile.old\n";
+        }
         rename( $TargetFile, "$TargetFile.old" ) || die $!;
     }
 
-    print "Writing $TargetFile\n";
+    if ( $Param{Verbose} ) {
+        print "Writing $TargetFile\n";
+    }
 
     $CommonObject{MainObject}->FileWrite(
         Location => $TargetFile,

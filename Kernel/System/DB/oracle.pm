@@ -247,10 +247,12 @@ sub TableCreate {
 
             push(
                 @Return2,
-                "IF EXISTS($Sequence) THEN\n"
-                    . "BEGIN\n"
-                    . "    DROP SEQUENCE $Sequence;\n"
-                    . "END;\n",
+                "BEGIN\n"
+                    . "  EXECUTE IMMEDIATE 'DROP SEQUENCE $Sequence';\n"
+                    . "EXCEPTION\n"
+                    . "  WHEN OTHERS THEN NULL;\n"
+                    . "END;\n"
+                    . "$Shell",
             );
 
             push(
@@ -268,15 +270,15 @@ sub TableCreate {
                 @Return2,
                 "CREATE OR REPLACE TRIGGER $Sequence"
                     . "_t\n"
-                    . "before insert on $TableName\n"
-                    . "for each row\n"
-                    . "begin\n"
-                    . "  if :new.$Tag->{Name} IS NULL then\n"
-                    . "    select $Sequence.nextval\n"
-                    . "    into :new.$Tag->{Name}\n"
-                    . "    from dual;\n"
-                    . "  end if;\n"
-                    . "end;\n"
+                    . "BEFORE INSERT ON $TableName\n"
+                    . "FOR EACH ROW\n"
+                    . "BEGIN\n"
+                    . "  IF :new.$Tag->{Name} IS NULL THEN\n"
+                    . "    SELECT $Sequence.nextval\n"
+                    . "    INTO :new.$Tag->{Name}\n"
+                    . "    FROM DUAL;\n"
+                    . "  END IF;\n"
+                    . "END;\n"
                     . "$Shell",
             );
         }
@@ -361,7 +363,9 @@ sub TableDrop {
                     . "----------------------------------------------------------\n";
             }
         }
+
         $SQL .= "DROP TABLE $Tag->{Name} CASCADE CONSTRAINTS";
+
         return ($SQL);
     }
     return ();
@@ -589,14 +593,9 @@ sub IndexCreate {
             $SQL .= ', ';
         }
         $SQL .= $Array[$_]->{Name};
-        if ( $Array[$_]->{Size} ) {
-
-            #           $SQL .= "($Array[$_]->{Size})";
-        }
     }
     $SQL .= ')';
 
-    # return SQL
     return ($SQL);
 
 }
@@ -716,7 +715,6 @@ sub UniqueCreate {
     }
     $SQL .= ')';
 
-    # return SQL
     return ($SQL);
 
 }
@@ -767,9 +765,8 @@ sub Insert {
         if ( $Tag->{Tag} eq 'Data' && $Tag->{TagType} eq 'Start' ) {
 
             # do not use auto increment values
-            if ( $Tag->{Type} && $Tag->{Type} =~ /^AutoIncrement$/i ) {
-                next TAG;
-            }
+            next TAG if $Tag->{Type} && $Tag->{Type} =~ m{ ^AutoIncrement$ }xmsi;
+
             $Tag->{Key} = ${ $Self->Quote( \$Tag->{Key} ) };
             push @Keys, $Tag->{Key};
             my $Value;

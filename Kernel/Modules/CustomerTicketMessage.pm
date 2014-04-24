@@ -144,6 +144,13 @@ sub Run {
                 return;
             }
         }
+        elsif ( $GetParam{Dest} ) {
+            my ( $QueueIDParam, $QueueParam ) = split( /\|\|/, $GetParam{Dest} );
+            my $QueueIDLookup = $Self->{QueueObject}->QueueLookup( Queue => $QueueParam );
+            if ( $QueueIDLookup && $QueueIDLookup eq $QueueIDParam ) {
+                $Param{ToSelected} = $GetParam{Dest};
+            }
+        }
 
         # create html strings for all dynamic fields
         my %DynamicFieldHTML;
@@ -298,7 +305,8 @@ sub Run {
                 Param => 'file_upload',
             );
             $Self->{UploadCacheObject}->FormIDAddFile(
-                FormID => $Self->{FormID},
+                FormID      => $Self->{FormID},
+                Disposition => 'attachment',
                 %UploadStuff,
             );
         }
@@ -630,7 +638,12 @@ sub Run {
 
             # skip, deleted not used inline images
             my $ContentID = $Attachment->{ContentID};
-            if ($ContentID) {
+            if (
+                $ContentID
+                && ( $Attachment->{ContentType} =~ /image/i )
+                && ( $Attachment->{Disposition} eq 'inline' )
+                )
+            {
                 my $ContentIDHTMLQuote = $Self->{LayoutObject}->Ascii2Html(
                     Text => $ContentID,
                 );
@@ -927,6 +940,17 @@ sub _MaskNew {
     $Param{FormID} = $Self->{FormID};
     $Param{Errors}->{QueueInvalid} = $Param{Errors}->{QueueInvalid} || '';
 
+    my $DynamicFieldNames = $Self->_GetFieldsToUpdate(
+        OnlyDynamicFields => 1,
+    );
+
+    # create a string with the quoted dynamic field names separated by commas
+    if ( IsArrayRefWithData($DynamicFieldNames) ) {
+        for my $Field ( @{$DynamicFieldNames} ) {
+            $Param{DynamicFieldNamesStrg} .= ", '" . $Field . "'";
+        }
+    }
+
     # get list type
     my $TreeView = 0;
     if ( $Self->{ConfigObject}->Get('Ticket::Frontend::ListType') eq 'tree' ) {
@@ -1176,7 +1200,15 @@ sub _MaskNew {
     # show attachments
     ATTACHMENT:
     for my $Attachment ( @{ $Param{Attachments} } ) {
-        next ATTACHMENT if $Attachment->{ContentID} && $Self->{LayoutObject}->{BrowserRichText};
+        if (
+            $Attachment->{ContentID}
+            && $Self->{LayoutObject}->{BrowserRichText}
+            && ( $Attachment->{ContentType} =~ /image/i )
+            && ( $Attachment->{Disposition} eq 'inline' )
+            )
+        {
+            next ATTACHMENT;
+        }
         $Self->{LayoutObject}->Block(
             Name => 'Attachment',
             Data => $Attachment,

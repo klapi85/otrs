@@ -32,34 +32,15 @@ All language functions.
 
 =item new()
 
-create a language object
+create a language object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::Language;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new(
+        LanguageObject => {
+            UserLanguage => 'de',
+        },
     );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $LanguageObject = Kernel::Language->new(
-        MainObject   => $MainObject,
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        UserLanguage => 'de',
-    );
+    my $LanguageObject = $Kernel::OM->Get('LanguageObject');
 
 =cut
 
@@ -220,7 +201,32 @@ sub new {
     return $Self;
 }
 
+=item Translate()
+
+translate a text with placeholders.
+
+        my $Text = $LanguageObject->Translate('Hello %s!', 'world');
+
+=cut
+
+sub Translate {
+    my ( $Self, $Text, @Parameters ) = @_;
+
+    $Text = $Self->{Translation}->{$Text} || $Text;
+
+    return $Text if !@Parameters;
+
+    for ( 0 .. $#Parameters ) {
+        return $Text if !defined $Parameters[$_];
+        $Text =~ s/\%(s|d)/$Parameters[$_]/;
+    }
+
+    return $Text;
+}
+
 =item Get()
+
+WARNING: THIS METHOD IS DEPRECATED AND WILL BE REMOVED IN FUTURE VERSION OF OTRS! USE Translate() INSTEAD.
 
 Translate a string.
 
@@ -230,7 +236,7 @@ Translate a string.
 
     my $String = 'History::NewTicket", "2011031110000023", "Postmaster", "3 normal", "open", "9';
 
-    my $TranslatedString = $LanguageObject->Get( $String );
+    my $TranslatedString = $LanguageObject->Translate( $String );
 
 =cut
 
@@ -316,29 +322,6 @@ sub Get {
     }
 
     return $What;
-}
-
-=item Translate()
-
-translate a text with placeholders.
-
-        my $Text = $LanguageObject->Translate('Hello %s!', 'world');
-
-=cut
-
-sub Translate {
-    my ( $Self, $Text, @Parameters ) = @_;
-
-    $Text = $Self->{Translation}->{$Text} || $Text;
-
-    return $Text if !@Parameters;
-
-    for ( 0 .. $#Parameters ) {
-        return $Text if !defined $Parameters[$_];
-        $Text =~ s/\%(s|d)/$Parameters[$_]/;
-    }
-
-    return $Text;
 }
 
 =item FormatTimeString()

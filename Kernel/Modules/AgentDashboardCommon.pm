@@ -34,7 +34,7 @@ sub new {
         }
     }
 
-    $Self->{CacheObject}           = Kernel::System::Cache->new(%Param);
+    $Self->{CacheObject}           = $Kernel::OM->Get('CacheObject');
     $Self->{CustomerCompanyObject} = Kernel::System::CustomerCompany->new(%Param);
 
     $Self->{SlaveDBObject}     = $Self->{DBObject};
@@ -131,7 +131,8 @@ sub Run {
 
                 my $Title = $Self->{LayoutObject}->{LanguageObject}
                     ->Get( $StatsHash->{$StatID}->{Title} );
-                $Title = $Self->{LayoutObject}->{LanguageObject}->Get('Statistic') . ': ' . $Title;
+                $Title = $Self->{LayoutObject}->{LanguageObject}->Translate('Statistic') . ': '
+                    . $Title;
 
                 $Config->{ ( $StatID + 1000 ) . '-Stats' } = {
                     'Block'       => 'ContentLarge',
@@ -676,7 +677,13 @@ sub Run {
     # add translations for the allocation lists for regular columns
     my $Columns = $Self->{ConfigObject}->Get('DefaultOverviewColumns') || {};
     if ( $Columns && IsHashRefWithData($Columns) ) {
+
+        COLUMN:
         for my $Column ( sort keys %{$Columns} ) {
+
+            # dynamic fields will be translated in the next block
+            next COLUMN if $Column =~ m{ \A DynamicField_ }xms;
+
             $Self->{LayoutObject}->Block(
                 Name => 'ColumnTranslation',
                 Data => {

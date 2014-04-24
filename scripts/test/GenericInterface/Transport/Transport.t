@@ -15,8 +15,10 @@ use vars (qw($Self));
 use CGI;
 use HTTP::Request::Common;
 
+use Kernel::System::UnitTest::Helper;
 use Kernel::GenericInterface::Debugger;
 use Kernel::GenericInterface::Transport;
+use Kernel::System::UnitTest::Helper;
 
 # helper object
 # skip SSL certiciate verification
@@ -154,11 +156,12 @@ for my $Fail ( 0 .. 1 ) {
                 "$TestEntry->{Name} success",
             );
 
-            $Self->Is(
-                $Result->{Data}->{ResponseContent},
-                $TestEntry->{ResultData},
-                "$TestEntry->{Name} result",
-            );
+            for my $QueryStringPart ( split m{&}, $TestEntry->{ResultData} ) {
+                $Self->True(
+                    index( $Result->{Data}->{ResponseContent}, $QueryStringPart ) > -1,
+                    "$TestEntry->{Name} result contains $QueryStringPart",
+                );
+            }
         }
         else {
             $Self->False(
@@ -225,6 +228,8 @@ for my $Fail ( 0 .. 1 ) {
             local $ENV{CONTENT_LENGTH} = length( $TestEntry->{RequestContent} );
             local $ENV{CONTENT_TYPE}
                 = 'application/x-www-form-urlencoded; charset=utf-8;';
+
+            $Self->{EncodeObject}->EncodeOutput( \$TestEntry->{RequestContent} );
 
             # redirect STDIN from String so that the transport layer will use this data
             local *STDIN;
@@ -338,9 +343,9 @@ for my $Fail ( 0 .. 1 ) {
                         "$TestEntry->{Name} result status 200",
                     );
 
-                    if ( $TestEntry->{ResultData} ) {
+                    for my $QueryStringPart ( split m{&}, $TestEntry->{ResultData} ) {
                         $Self->True(
-                            index( $ResultData, $TestEntry->{ResultData} ) > -1,
+                            index( $ResultData, $QueryStringPart ) > -1,
                             "$TestEntry->{Name} result",
                         );
                     }
@@ -350,13 +355,6 @@ for my $Fail ( 0 .. 1 ) {
                         index( $ResultData, '500 Custom Test Error' ) > -1,
                         "$TestEntry->{Name} result status 500",
                     );
-
-                    if ( $TestEntry->{ResultData} ) {
-                        $Self->False(
-                            index( $ResultData, $TestEntry->{ResultData} ) > -1,
-                            "$TestEntry->{Name} result",
-                        );
-                    }
                 }
             }
             else {

@@ -35,47 +35,11 @@ All user functions. E. g. to add and updated user and other functions.
 
 =item new()
 
-create an object
+create an object. Do not use it directly, instead use:
 
-    use Kernel::Config;
-    use Kernel::System::Encode;
-    use Kernel::System::Log;
-    use Kernel::System::Main;
-    use Kernel::System::Time;
-    use Kernel::System::DB;
-    use Kernel::System::User;
-
-    my $ConfigObject = Kernel::Config->new();
-    my $EncodeObject = Kernel::System::Encode->new(
-        ConfigObject => $ConfigObject,
-    );
-    my $LogObject = Kernel::System::Log->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-    );
-    my $MainObject = Kernel::System::Main->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-    );
-    my $TimeObject = Kernel::System::Time->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-    );
-    my $DBObject = Kernel::System::DB->new(
-        ConfigObject => $ConfigObject,
-        EncodeObject => $EncodeObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-    );
-    my $UserObject = Kernel::System::User->new(
-        ConfigObject => $ConfigObject,
-        LogObject    => $LogObject,
-        MainObject   => $MainObject,
-        TimeObject   => $TimeObject,
-        DBObject     => $DBObject,
-        EncodeObject => $EncodeObject,
-    );
+    use Kernel::System::ObjectManager;
+    local $Kernel::OM = Kernel::System::ObjectManager->new();
+    my $UserObject = $Kernel::OM->Get('UserObject');
 
 =cut
 
@@ -171,20 +135,18 @@ sub GetUserData {
 
     my $CacheKey;
     if ( $Param{User} ) {
-        $CacheKey
-            = 'GetUserData::User::'
-            . $Param{User} . '::'
-            . $Param{Valid} . '::'
-            . $FirstnameLastNameOrder . '::'
-            . $Param{NoOutOfOffice};
+        $CacheKey = join '::', 'GetUserData', 'User',
+            $Param{User},
+            $Param{Valid},
+            $FirstnameLastNameOrder,
+            $Param{NoOutOfOffice};
     }
     else {
-        $CacheKey
-            = 'GetUserData::UserID::'
-            . $Param{UserID} . '::'
-            . $Param{Valid} . '::'
-            . $FirstnameLastNameOrder . '::'
-            . $Param{NoOutOfOffice};
+        $CacheKey = join '::', 'GetUserData', 'UserID',
+            $Param{UserID},
+            $Param{Valid},
+            $FirstnameLastNameOrder,
+            $Param{NoOutOfOffice};
     }
 
     # check cache
@@ -945,8 +907,7 @@ sub UserList {
     my $FirstnameLastNameOrder = $Self->{ConfigObject}->Get('FirstnameLastnameOrder') || 0;
 
     # check cache
-    my $CacheKey = 'UserList::' . $Type . '::' . $Valid
-        . '::' . $FirstnameLastNameOrder;
+    my $CacheKey = join '::', 'UserList', $Type, $Valid, $FirstnameLastNameOrder;
     my $Cache = $Self->{CacheInternalObject}->Get(
         Key => $CacheKey,
     );
